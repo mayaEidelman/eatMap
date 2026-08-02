@@ -9,12 +9,22 @@ export type User = {
   accent: string;
 };
 
+export const PLACE_CATEGORIES = ['food', 'attraction', 'hotel', 'cafe', 'shopping', 'nature', 'nightlife', 'other'] as const;
+export type PlaceCategory = (typeof PLACE_CATEGORIES)[number];
+
 export type Place = {
   id: string;
   name: string;
   address: string;
   lat: number;
   lng: number;
+  category: PlaceCategory;
+};
+
+export type TripDay = {
+  id: string;
+  label: string;
+  placeIds: string[];
 };
 
 export type TripList = {
@@ -27,6 +37,7 @@ export type TripList = {
   vibe: string;
   description: string;
   places: Place[];
+  days: TripDay[];
   season: string;
   budget: string;
   createdAt: string;
@@ -65,13 +76,9 @@ export type AppData = {
   likes: Like[];
 };
 
-export type DraftPlace = {
-  id: string;
-  name: string;
-  address: string;
-  lat: number;
-  lng: number;
-};
+export type DraftPlace = Place;
+
+export type DraftDay = TripDay;
 
 export type DraftList = {
   title: string;
@@ -81,6 +88,7 @@ export type DraftList = {
   vibe: string;
   description: string;
   places: DraftPlace[];
+  days: DraftDay[];
   season: string;
   budget: string;
 };

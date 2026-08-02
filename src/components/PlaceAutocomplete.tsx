@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { guessCategoryFromTypes } from '../lib/categories';
 import { loadGoogleMaps } from '../lib/googleMaps';
 import type { DraftPlace } from '../types';
 
@@ -21,7 +22,7 @@ export function PlaceAutocomplete({ onAdd }: PlaceAutocompleteProps) {
         }
 
         const autocomplete = new googleApi.maps.places.Autocomplete(inputRef.current, {
-          fields: ['name', 'formatted_address', 'geometry'],
+          fields: ['name', 'formatted_address', 'geometry', 'types'],
         });
 
         autocomplete.addListener('place_changed', () => {
@@ -37,6 +38,7 @@ export function PlaceAutocomplete({ onAdd }: PlaceAutocompleteProps) {
             address: place.formatted_address ?? '',
             lat: location.lat(),
             lng: location.lng(),
+            category: guessCategoryFromTypes(place.types),
           });
 
           if (inputRef.current) {

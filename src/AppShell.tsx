@@ -1,10 +1,13 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { ImportPlacesModal } from './components/ImportPlacesModal';
 import { MapPanel } from './components/MapPanel';
 import { PlaceAutocomplete } from './components/PlaceAutocomplete';
+import { CATEGORY_META, groupPlacesByCategory } from './lib/categories';
 import { demoData, emptyDraft } from './mock';
-import type { AppData, DraftList, DraftPlace, PageMode, ProfileDraft, Rating, TripList } from './types';
+import { PLACE_CATEGORIES } from './types';
+import type { AppData, DraftList, DraftPlace, PageMode, Place, PlaceCategory, ProfileDraft, Rating, TripDay, TripList } from './types';
 
-const STORAGE_KEY = 'eatmap-v3';
+const STORAGE_KEY = 'eatmap-v4';
 const AUTH_STORAGE_KEY = 'eatmap-authenticated-v1';
 const DEFAULT_COVER = 'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?q=80&w=1200&auto=format&fit=crop';
 
@@ -24,7 +27,14 @@ function loadData(): AppData {
     }
 
     const parsed = JSON.parse(raw) as AppData;
-    if (!parsed.users?.length || !parsed.lists?.length || !parsed.savedLists || !parsed.likes) {
+    const hasValidShape =
+      parsed.users?.length &&
+      parsed.lists?.length &&
+      parsed.savedLists &&
+      parsed.likes &&
+      parsed.lists.every((list) => Array.isArray(list.days) && list.places.every((place) => Boolean(place.category)));
+
+    if (!hasValidShape) {
       return cloneData();
     }
 
@@ -56,6 +66,35 @@ function getListSummary(listId: string, ratings: Rating[]) {
   const average = count ? matching.reduce((sum, rating) => sum + rating.score, 0) / count : 0;
 
   return { count, average };
+}
+
+function getUserStats(userId: string, data: AppData) {
+  const ownedListIds = new Set(data.lists.filter((list) => list.ownerId === userId).map((list) => list.id));
+  const ownedRatings = data.ratings.filter((rating) => ownedListIds.has(rating.listId));
+  const avgRating = ownedRatings.length
+    ? ownedRatings.reduce((sum, rating) => sum + rating.score, 0) / ownedRatings.length
+    : 0;
+
+  return {
+    followers: data.follows.filter((follow) => follow.followingId === userId).length,
+    following: data.follows.filter((follow) => follow.followerId === userId).length,
+    trips: ownedListIds.size,
+    avgRating,
+  };
+}
+
+function getFollowerUsers(userId: string, data: AppData) {
+  return data.follows
+    .filter((follow) => follow.followingId === userId)
+    .map((follow) => data.users.find((user) => user.id === follow.followerId))
+    .filter((user): user is AppData['users'][number] => Boolean(user));
+}
+
+function getFollowingUsers(userId: string, data: AppData) {
+  return data.follows
+    .filter((follow) => follow.followerId === userId)
+    .map((follow) => data.users.find((user) => user.id === follow.followingId))
+    .filter((user): user is AppData['users'][number] => Boolean(user));
 }
 
 function isFollowing(follows: AppData['follows'], followerId: string, followingId: string) {
@@ -102,6 +141,7 @@ function buildListDraft(list?: TripList): DraftList {
     vibe: list.vibe,
     description: list.description,
     places: list.places.map((place) => ({ ...place })),
+    days: list.days.map((tripDay) => ({ ...tripDay, placeIds: [...tripDay.placeIds] })),
     season: list.season,
     budget: list.budget,
   };
@@ -161,7 +201,8 @@ function AppShell() {
   const [search, setSearch] = useState('');
   const [selectedListId, setSelectedListId] = useState(data.lists[0]?.id ?? '');
   const [listDetailId, setListDetailId] = useState<string | null>(null);
-  const [peopleListOpen, setPeopleListOpen] = useState<'followers' | 'following' | null>(null);
+  const [peopleListOpen, setPeopleListOpen] = useState<{ userId: string; mode: 'followers' | 'following' } | null>(null);
+  const [viewedProfileId, setViewedProfileId] = useState<string | null>(null);
   const [dmThreadUserId, setDmThreadUserId] = useState<string>(data.users.find((user) => user.id !== data.currentUserId)?.id ?? '');
   const [dmDraft, setDmDraft] = useState('');
   const [dmMessages, setDmMessages] = useState<DirectMessage[]>(seedMessages);
@@ -170,6 +211,7 @@ function AppShell() {
   const [listFormMode, setListFormMode] = useState<'create' | 'edit'>('create');
   const [draft, setDraft] = useState<DraftList>(emptyDraft);
   const [profileDraft, setProfileDraft] = useState<ProfileDraft>(buildProfileDraft(data.users[0]));
+  const [importPlacesOpen, setImportPlacesOpen] = useState(false);
 
   useEffect(() => {
     persistData(data);
@@ -198,8 +240,78 @@ function AppShell() {
     setDraft((current) => ({ ...current, places: [...current.places, place] }));
   }, []);
 
+  const importDraftPlaces = useCallback((imported: DraftPlace[]) => {
+    setDraft((current) => {
+      const existingNames = new Set(current.places.map((place) => place.name.trim().toLowerCase()));
+      const newPlaces = imported.filter((place) => !existingNames.has(place.name.trim().toLowerCase()));
+      return { ...current, places: [...current.places, ...newPlaces] };
+    });
+    setImportPlacesOpen(false);
+  }, []);
+
   const removeDraftPlace = useCallback((placeId: string) => {
-    setDraft((current) => ({ ...current, places: current.places.filter((place) => place.id !== placeId) }));
+    setDraft((current) => ({
+      ...current,
+      places: current.places.filter((place) => place.id !== placeId),
+      days: current.days.map((tripDay) => ({ ...tripDay, placeIds: tripDay.placeIds.filter((id) => id !== placeId) })),
+    }));
+  }, []);
+
+  const updateDraftPlaceCategory = useCallback((placeId: string, category: PlaceCategory) => {
+    setDraft((current) => ({
+      ...current,
+      places: current.places.map((place) => (place.id === placeId ? { ...place, category } : place)),
+    }));
+  }, []);
+
+  const addDraftDay = useCallback(() => {
+    setDraft((current) => ({
+      ...current,
+      days: [...current.days, { id: crypto.randomUUID(), label: `Day ${current.days.length + 1}`, placeIds: [] }],
+    }));
+  }, []);
+
+  const removeDraftDay = useCallback((dayId: string) => {
+    setDraft((current) => ({ ...current, days: current.days.filter((tripDay) => tripDay.id !== dayId) }));
+  }, []);
+
+  const renameDraftDay = useCallback((dayId: string, label: string) => {
+    setDraft((current) => ({
+      ...current,
+      days: current.days.map((tripDay) => (tripDay.id === dayId ? { ...tripDay, label } : tripDay)),
+    }));
+  }, []);
+
+  const movePlaceToDraftDay = useCallback((placeId: string, targetDayId: string, beforePlaceId?: string) => {
+    setDraft((current) => {
+      const days = current.days.map((tripDay) => ({
+        ...tripDay,
+        placeIds: tripDay.placeIds.filter((id) => id !== placeId),
+      }));
+
+      const targetIndex = days.findIndex((tripDay) => tripDay.id === targetDayId);
+      if (targetIndex === -1) {
+        return { ...current, days };
+      }
+
+      const placeIds = [...days[targetIndex].placeIds];
+      const insertAt = beforePlaceId ? placeIds.indexOf(beforePlaceId) : -1;
+      if (insertAt === -1) {
+        placeIds.push(placeId);
+      } else {
+        placeIds.splice(insertAt, 0, placeId);
+      }
+
+      days[targetIndex] = { ...days[targetIndex], placeIds };
+      return { ...current, days };
+    });
+  }, []);
+
+  const unscheduleDraftPlace = useCallback((placeId: string) => {
+    setDraft((current) => ({
+      ...current,
+      days: current.days.map((tripDay) => ({ ...tripDay, placeIds: tripDay.placeIds.filter((id) => id !== placeId) })),
+    }));
   }, []);
 
   const exploreLists = useMemo(() => filterByQuery(data.lists, search), [data.lists, search]);
@@ -234,26 +346,18 @@ function AppShell() {
     [data.currentUserId, data.users],
   );
 
-  const followerUsers = useMemo(
-    () =>
-      data.follows
-        .filter((follow) => follow.followingId === data.currentUserId)
-        .map((follow) => data.users.find((user) => user.id === follow.followerId))
-        .filter((user): user is AppData['users'][number] => Boolean(user)),
-    [data.currentUserId, data.follows, data.users],
-  );
-
-  const followingUsers = useMemo(
-    () =>
-      data.follows
-        .filter((follow) => follow.followerId === data.currentUserId)
-        .map((follow) => data.users.find((user) => user.id === follow.followingId))
-        .filter((user): user is AppData['users'][number] => Boolean(user)),
-    [data.currentUserId, data.follows, data.users],
-  );
-
   const listDetail = data.lists.find((list) => list.id === listDetailId) ?? null;
   const listDetailOwner = listDetail ? data.users.find((user) => user.id === listDetail.ownerId) : undefined;
+
+  const viewedProfile = data.users.find((user) => user.id === viewedProfileId) ?? null;
+  const viewedProfileStats = viewedProfile ? getUserStats(viewedProfile.id, data) : null;
+  const viewedProfileLists = viewedProfile ? data.lists.filter((list) => list.ownerId === viewedProfile.id) : [];
+
+  const peopleListUsers = peopleListOpen
+    ? peopleListOpen.mode === 'followers'
+      ? getFollowerUsers(peopleListOpen.userId, data)
+      : getFollowingUsers(peopleListOpen.userId, data)
+    : [];
 
   useEffect(() => {
     if (!dmThreadUserId && peopleToFollow[0]) {
@@ -367,6 +471,20 @@ function AppShell() {
     setListDetailId(null);
   }
 
+  function openProfile(userId: string) {
+    if (userId === data.currentUserId) {
+      setListDetailId(null);
+      setPeopleListOpen(null);
+      setViewedProfileId(null);
+      setPage('account');
+      return;
+    }
+
+    setListDetailId(null);
+    setPeopleListOpen(null);
+    setViewedProfileId(userId);
+  }
+
   function handleCoverFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) {
@@ -449,6 +567,7 @@ function AppShell() {
                   vibe: draft.vibe.trim() || 'custom route',
                   description: draft.description.trim() || 'A new list from the community.',
                   places: draft.places,
+                  days: draft.days,
                   season: draft.season,
                   budget: draft.budget,
                 }
@@ -467,6 +586,7 @@ function AppShell() {
         vibe: draft.vibe.trim() || 'custom route',
         description: draft.description.trim() || 'A new list from the community.',
         places: draft.places,
+        days: draft.days,
         season: draft.season,
         budget: draft.budget,
         createdAt: new Date().toISOString(),
@@ -515,19 +635,8 @@ function AppShell() {
       return { followers: 0, following: 0, trips: 0, avgRating: 0 };
     }
 
-    const ownedListIds = new Set(data.lists.filter((list) => list.ownerId === currentUser.id).map((list) => list.id));
-    const ownedRatings = data.ratings.filter((rating) => ownedListIds.has(rating.listId));
-    const avgRating = ownedRatings.length
-      ? ownedRatings.reduce((sum, rating) => sum + rating.score, 0) / ownedRatings.length
-      : 0;
-
-    return {
-      followers: data.follows.filter((follow) => follow.followingId === currentUser.id).length,
-      following: data.follows.filter((follow) => follow.followerId === currentUser.id).length,
-      trips: ownedListIds.size,
-      avgRating,
-    };
-  }, [currentUser, data.follows, data.lists, data.ratings]);
+    return getUserStats(currentUser.id, data);
+  }, [currentUser, data]);
 
   if (!currentUser) {
     return null;
@@ -641,7 +750,7 @@ function AppShell() {
       </header>
 
       {page === 'home' ? (
-        <div className={`map-page${sidebarOpen ? '' : ' map-page--collapsed'}`}>
+        <div className={`map-page page-transition${sidebarOpen ? '' : ' map-page--collapsed'}`}>
           {sidebarOpen ? (
             <aside className="map-sidebar panel">
               <div className="map-sidebar__header">
@@ -710,7 +819,7 @@ function AppShell() {
       ) : null}
 
       {page === 'explore' ? (
-        <div className="explore-page">
+        <div className="explore-page page-transition">
           <div className="explore-rect-grid">
             {exploreLists.map((list) => (
               <RectCard
@@ -727,7 +836,7 @@ function AppShell() {
       ) : null}
 
       {page === 'dm' ? (
-        <div className="dm-page panel">
+        <div className="dm-page panel page-transition">
           <div className="dm-page__list">
             <div className="section-heading">
               <h3>Direct messages</h3>
@@ -785,7 +894,7 @@ function AppShell() {
       ) : null}
 
       {page === 'account' ? (
-        <main className="account-page panel">
+        <main className="account-page panel page-transition">
           <div className="account-page__header">
             <div className="account-page__profile">
               <Avatar user={currentUser} className="profile-card__avatar account-page__avatar" />
@@ -798,8 +907,16 @@ function AppShell() {
             </div>
 
             <div className="stats-row account-page__stats">
-              <Stat label="Followers" value={stats.followers} onClick={() => setPeopleListOpen('followers')} />
-              <Stat label="Following" value={stats.following} onClick={() => setPeopleListOpen('following')} />
+              <Stat
+                label="Followers"
+                value={stats.followers}
+                onClick={() => setPeopleListOpen({ userId: currentUser.id, mode: 'followers' })}
+              />
+              <Stat
+                label="Following"
+                value={stats.following}
+                onClick={() => setPeopleListOpen({ userId: currentUser.id, mode: 'following' })}
+              />
               <Stat label="Lists" value={stats.trips} />
               <Stat label="Avg rating" value={formatRating(stats.avgRating)} />
             </div>
@@ -899,7 +1016,12 @@ function AppShell() {
               </label>
 
               <div className="form-grid__full draft-places">
-                <span>Saved places ({draft.places.length})</span>
+                <div className="draft-places__heading">
+                  <span>Saved places ({draft.places.length})</span>
+                  <button type="button" className="secondary-button" onClick={() => setImportPlacesOpen(true)}>
+                    Import from Google Maps
+                  </button>
+                </div>
                 <PlaceAutocomplete onAdd={addDraftPlace} />
                 <div className="draft-places__list">
                   {draft.places.map((place) => (
@@ -908,12 +1030,164 @@ function AppShell() {
                         <strong>{place.name}</strong>
                         <small>{place.address}</small>
                       </div>
+                      <select
+                        className="draft-place__category"
+                        value={place.category}
+                        onChange={(event) => updateDraftPlaceCategory(place.id, event.target.value as PlaceCategory)}
+                        aria-label={`Category for ${place.name}`}
+                      >
+                        {PLACE_CATEGORIES.map((category) => (
+                          <option key={category} value={category}>
+                            {CATEGORY_META[category].icon} {CATEGORY_META[category].label}
+                          </option>
+                        ))}
+                      </select>
                       <button type="button" className="icon-button" onClick={() => removeDraftPlace(place.id)} aria-label={`Remove ${place.name}`}>
                         ×
                       </button>
                     </div>
                   ))}
                   {draft.places.length === 0 ? <p className="draft-places__empty">Search above to pin real places from Google Maps.</p> : null}
+                </div>
+              </div>
+
+              <div className="form-grid__full trip-plan-editor">
+                <div className="section-heading">
+                  <h3>Trip plan</h3>
+                  <button type="button" className="secondary-button" onClick={addDraftDay}>
+                    + Add day
+                  </button>
+                </div>
+
+                <div className="trip-plan-days">
+                  {draft.days.map((tripDay) => (
+                    <div
+                      key={tripDay.id}
+                      className="trip-day"
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const placeId = event.dataTransfer.getData('text/plain');
+                        if (placeId) {
+                          movePlaceToDraftDay(placeId, tripDay.id);
+                        }
+                      }}
+                    >
+                      <div className="trip-day__header">
+                        <input
+                          className="trip-day__label"
+                          value={tripDay.label}
+                          onChange={(event) => renameDraftDay(tripDay.id, event.target.value)}
+                          aria-label="Day label"
+                        />
+                        <button
+                          type="button"
+                          className="icon-button"
+                          onClick={() => removeDraftDay(tripDay.id)}
+                          aria-label={`Remove ${tripDay.label}`}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <div className="trip-day__places">
+                        {tripDay.placeIds.map((placeId) => {
+                          const place = draft.places.find((item) => item.id === placeId);
+                          if (!place) {
+                            return null;
+                          }
+
+                          return (
+                            <div
+                              key={placeId}
+                              className="trip-place-card"
+                              draggable
+                              onDragStart={(event) => event.dataTransfer.setData('text/plain', placeId)}
+                              onDragOver={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                              }}
+                              onDrop={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                const draggedId = event.dataTransfer.getData('text/plain');
+                                if (draggedId && draggedId !== placeId) {
+                                  movePlaceToDraftDay(draggedId, tripDay.id, placeId);
+                                }
+                              }}
+                            >
+                              <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span>
+                              <span className="trip-place-card__name">{place.name}</span>
+                              <button
+                                type="button"
+                                className="trip-place-card__remove"
+                                onClick={() => unscheduleDraftPlace(placeId)}
+                                aria-label={`Remove ${place.name} from ${tripDay.label}`}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          );
+                        })}
+                        {tripDay.placeIds.length === 0 ? <p className="trip-day__empty">Drag a place here</p> : null}
+                      </div>
+                      <select
+                        className="trip-day__add"
+                        value=""
+                        onChange={(event) => {
+                          const placeId = event.target.value;
+                          if (placeId) {
+                            movePlaceToDraftDay(placeId, tripDay.id);
+                          }
+                        }}
+                        aria-label={`Add a saved place to ${tripDay.label}`}
+                      >
+                        <option value="">+ Add from saved places</option>
+                        {draft.places.map((place) => {
+                          const currentDay = draft.days.find((day) => day.placeIds.includes(place.id));
+                          const suffix = currentDay && currentDay.id !== tripDay.id ? ` (in ${currentDay.label})` : '';
+                          return (
+                            <option key={place.id} value={place.id}>
+                              {CATEGORY_META[place.category].icon} {place.name}
+                              {suffix}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  ))}
+                  {draft.days.length === 0 ? (
+                    <p className="draft-places__empty">Add a day to start building the itinerary.</p>
+                  ) : null}
+                </div>
+
+                <div
+                  className="trip-plan-unscheduled"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const placeId = event.dataTransfer.getData('text/plain');
+                    if (placeId) {
+                      unscheduleDraftPlace(placeId);
+                    }
+                  }}
+                >
+                  <span className="trip-plan-unscheduled__label">Unscheduled places</span>
+                  <div className="trip-plan-unscheduled__list">
+                    {draft.places
+                      .filter((place) => !draft.days.some((tripDay) => tripDay.placeIds.includes(place.id)))
+                      .map((place) => (
+                        <div
+                          key={place.id}
+                          className="trip-place-card"
+                          draggable
+                          onDragStart={(event) => event.dataTransfer.setData('text/plain', place.id)}
+                        >
+                          <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span>
+                          <span className="trip-place-card__name">{place.name}</span>
+                        </div>
+                      ))}
+                    {draft.places.length === 0 ? <p className="trip-day__empty">Add places above first.</p> : null}
+                  </div>
                 </div>
               </div>
 
@@ -946,6 +1220,10 @@ function AppShell() {
             </form>
           </div>
         </div>
+      ) : null}
+
+      {importPlacesOpen ? (
+        <ImportPlacesModal onClose={() => setImportPlacesOpen(false)} onImport={importDraftPlaces} />
       ) : null}
 
       {profileEditorOpen ? (
@@ -1067,11 +1345,17 @@ function AppShell() {
             </div>
 
             <div className="owner-card">
-              <Avatar user={listDetailOwner} className="owner-card__avatar" />
-              <div>
-                <strong>{listDetailOwner?.name ?? 'Unknown traveler'}</strong>
-                <p>{listDetailOwner?.handle ?? 'no handle'}</p>
-              </div>
+              <button
+                className="owner-card__hit"
+                type="button"
+                onClick={() => listDetailOwner && openProfile(listDetailOwner.id)}
+              >
+                <Avatar user={listDetailOwner} className="owner-card__avatar" />
+                <div>
+                  <strong>{listDetailOwner?.name ?? 'Unknown traveler'}</strong>
+                  <p>{listDetailOwner?.handle ?? 'no handle'}</p>
+                </div>
+              </button>
               {listDetailOwner?.id === currentUser.id ? (
                 <button className="secondary-button" type="button" onClick={() => openEditList(listDetail)}>
                   Edit list
@@ -1092,18 +1376,9 @@ function AppShell() {
               )}
             </div>
 
-            <div className="place-list">
-              <h3>Saved places</h3>
-              {listDetail.places.map((place) => (
-                <div key={place.id} className="place-list__item">
-                  <span className="place-dot" />
-                  <div>
-                    <strong>{place.name}</strong>
-                    <small>{place.address}</small>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <TripPlanView key={`${listDetail.id}-days`} days={listDetail.days} places={listDetail.places} />
+
+            <SavedPlacesView key={`${listDetail.id}-places`} places={listDetail.places} />
 
             {listDetailOwner?.id !== currentUser.id ? (
               <div className="rating-panel">
@@ -1140,33 +1415,244 @@ function AppShell() {
         <div className="modal-backdrop" role="presentation" onClick={() => setPeopleListOpen(null)}>
           <div className="modal panel" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="section-heading">
-              <h3>{peopleListOpen === 'followers' ? 'Followers' : 'Following'}</h3>
+              <h3>{peopleListOpen.mode === 'followers' ? 'Followers' : 'Following'}</h3>
               <button className="icon-button" type="button" onClick={() => setPeopleListOpen(null)}>
                 ×
               </button>
             </div>
             <div className="people-list">
-              {(peopleListOpen === 'followers' ? followerUsers : followingUsers).map((user) => (
+              {peopleListUsers.map((user) => (
                 <div key={user.id} className="people-list__item">
-                  <Avatar user={user} className="people-list__avatar" />
-                  <div>
-                    <strong>{user.name}</strong>
-                    <p>{user.handle}</p>
-                  </div>
-                  <button className="secondary-button" type="button" onClick={() => toggleFollow(user.id)}>
-                    {isFollowing(data.follows, data.currentUserId, user.id) ? 'Following' : 'Follow'}
+                  <button className="people-list__hit" type="button" onClick={() => openProfile(user.id)}>
+                    <Avatar user={user} className="people-list__avatar" />
+                    <div>
+                      <strong>{user.name}</strong>
+                      <p>{user.handle}</p>
+                    </div>
                   </button>
+                  {user.id !== data.currentUserId ? (
+                    <button className="secondary-button" type="button" onClick={() => toggleFollow(user.id)}>
+                      {isFollowing(data.follows, data.currentUserId, user.id) ? 'Following' : 'Follow'}
+                    </button>
+                  ) : null}
                 </div>
               ))}
-              {(peopleListOpen === 'followers' ? followerUsers : followingUsers).length === 0 ? (
+              {peopleListUsers.length === 0 ? (
                 <p className="sidebar__empty">
-                  {peopleListOpen === 'followers' ? 'No followers yet.' : 'Not following anyone yet.'}
+                  {peopleListOpen.mode === 'followers' ? 'No followers yet.' : 'Not following anyone yet.'}
                 </p>
               ) : null}
             </div>
           </div>
         </div>
       ) : null}
+
+      {viewedProfile && viewedProfileStats ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setViewedProfileId(null)}>
+          <div className="modal panel profile-view-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <button className="icon-button list-detail-modal__close" type="button" onClick={() => setViewedProfileId(null)} aria-label="Close">
+              ×
+            </button>
+
+            <div className="profile-view__header">
+              <Avatar user={viewedProfile} className="profile-card__avatar profile-view__avatar" />
+              <div>
+                <h2>{viewedProfile.name}</h2>
+                <p>{viewedProfile.handle}</p>
+                <p>{viewedProfile.city}</p>
+              </div>
+              <button className="secondary-button" type="button" onClick={() => toggleFollow(viewedProfile.id)}>
+                {isFollowing(data.follows, data.currentUserId, viewedProfile.id) ? 'Following' : 'Follow'}
+              </button>
+            </div>
+
+            <p className="detail-panel__description">{viewedProfile.bio}</p>
+
+            <div className="stats-row">
+              <Stat
+                label="Followers"
+                value={viewedProfileStats.followers}
+                onClick={() => {
+                  setViewedProfileId(null);
+                  setPeopleListOpen({ userId: viewedProfile.id, mode: 'followers' });
+                }}
+              />
+              <Stat
+                label="Following"
+                value={viewedProfileStats.following}
+                onClick={() => {
+                  setViewedProfileId(null);
+                  setPeopleListOpen({ userId: viewedProfile.id, mode: 'following' });
+                }}
+              />
+              <Stat label="Lists" value={viewedProfileStats.trips} />
+              <Stat label="Avg rating" value={formatRating(viewedProfileStats.avgRating)} />
+            </div>
+
+            <div className="section-heading">
+              <h3>Lists</h3>
+              <span>{viewedProfileLists.length}</span>
+            </div>
+            <div className="explore-rect-grid">
+              {viewedProfileLists.map((list) => (
+                <RectCard
+                  key={list.id}
+                  list={list}
+                  liked={isLiked(data.likes, data.currentUserId, list.id)}
+                  likeCount={getLikeCount(data.likes, list.id)}
+                  onOpen={() => {
+                    setViewedProfileId(null);
+                    openListDetail(list.id);
+                  }}
+                  onToggleLike={() => toggleLike(list.id)}
+                />
+              ))}
+              {viewedProfileLists.length === 0 ? <p className="sidebar__empty">No lists yet.</p> : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TripPlanView({ days, places }: { days: TripDay[]; places: Place[] }) {
+  const [viewMode, setViewMode] = useState<'cards' | 'timeline'>('cards');
+
+  if (days.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="trip-plan-view">
+      <div className="section-heading">
+        <h3>Trip plan</h3>
+        <div className="view-toggle">
+          <button
+            type="button"
+            className={`pill${viewMode === 'cards' ? ' pill--active' : ''}`}
+            onClick={() => setViewMode('cards')}
+          >
+            Cards
+          </button>
+          <button
+            type="button"
+            className={`pill${viewMode === 'timeline' ? ' pill--active' : ''}`}
+            onClick={() => setViewMode('timeline')}
+          >
+            Timeline
+          </button>
+        </div>
+      </div>
+
+      {viewMode === 'cards' ? (
+        <div className="trip-plan-view__days">
+          {days.map((tripDay) => (
+            <div key={tripDay.id} className="trip-plan-view__day">
+              <strong>{tripDay.label}</strong>
+              {tripDay.placeIds.length === 0 ? (
+                <p className="trip-day__empty">No stops planned</p>
+              ) : (
+                <ol>
+                  {tripDay.placeIds.map((placeId) => {
+                    const place = places.find((item) => item.id === placeId);
+                    return place ? (
+                      <li key={placeId}>
+                        <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span> {place.name}
+                      </li>
+                    ) : null;
+                  })}
+                </ol>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="trip-timeline">
+          {days.map((tripDay) => (
+            <div key={tripDay.id} className="trip-timeline__day">
+              <div className="trip-timeline__day-label">{tripDay.label}</div>
+              {tripDay.placeIds.length === 0 ? (
+                <p className="trip-day__empty">No stops planned</p>
+              ) : (
+                tripDay.placeIds.map((placeId, index) => {
+                  const place = places.find((item) => item.id === placeId);
+                  if (!place) {
+                    return null;
+                  }
+
+                  const isLast = index === tripDay.placeIds.length - 1;
+                  return (
+                    <div key={placeId} className="trip-timeline__item">
+                      <div className="trip-timeline__marker">
+                        <span className="trip-timeline__dot">{index + 1}</span>
+                        {!isLast ? <span className="trip-timeline__line" /> : null}
+                      </div>
+                      <div className="trip-timeline__content">
+                        <strong>
+                          <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span> {place.name}
+                        </strong>
+                        <small>{place.address}</small>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SavedPlacesView({ places }: { places: Place[] }) {
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<PlaceCategory>>(new Set());
+
+  function toggleCategory(category: PlaceCategory) {
+    setCollapsedCategories((current) => {
+      const next = new Set(current);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  }
+
+  return (
+    <div className="place-list">
+      <h3>Saved places</h3>
+      {groupPlacesByCategory(places).map((group) => {
+        const collapsed = collapsedCategories.has(group.category);
+        return (
+          <div key={group.category} className="place-category-group">
+            <button
+              type="button"
+              className="collapsible-header place-category-group__heading"
+              onClick={() => toggleCategory(group.category)}
+            >
+              <span aria-hidden="true">{CATEGORY_META[group.category].icon}</span>
+              <span className="place-category-group__label">{CATEGORY_META[group.category].label}</span>
+              <span className={`collapsible-chevron${collapsed ? ' collapsible-chevron--collapsed' : ''}`} aria-hidden="true">
+                ⌄
+              </span>
+            </button>
+            {!collapsed
+              ? group.places.map((place) => (
+                  <div key={place.id} className="place-list__item">
+                    <span className="place-dot" />
+                    <div>
+                      <strong>{place.name}</strong>
+                      <small>{place.address}</small>
+                    </div>
+                  </div>
+                ))
+              : null}
+          </div>
+        );
+      })}
     </div>
   );
 }

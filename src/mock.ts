@@ -1,13 +1,17 @@
-import type { AppData, DraftList, Place, TripList, User } from './types';
+import type { AppData, DraftList, Place, PlaceCategory, TripDay, TripList, User } from './types';
 
-function place(id: string, name: string, address: string, lat: number, lng: number): Place {
-  return { id, name, address, lat, lng };
+function place(id: string, name: string, address: string, lat: number, lng: number, category: PlaceCategory): Place {
+  return { id, name, address, lat, lng, category };
+}
+
+function day(id: string, label: string, placeIds: string[]): TripDay {
+  return { id, label, placeIds };
 }
 
 export const demoUsers: User[] = [
   {
     id: 'u-maya',
-    name: 'Maya Cohen',
+    name: 'Maya Eidelman',
     handle: '@mayawanders',
     city: 'Tel Aviv',
     bio: 'Builds routes around food stalls, hidden beaches, and long train rides.',
@@ -54,10 +58,14 @@ export const demoLists: TripList[] = [
     vibe: 'temples + tea houses',
     description: 'A compact route for peaceful mornings, old streets, and one perfect ramen stop.',
     places: [
-      place('p-kyoto-1', 'Kiyomizu-dera', '1-294 Kiyomizu, Higashiyama Ward, Kyoto', 34.9949, 135.785),
-      place('p-kyoto-2', 'Ninenzaka', 'Ninenzaka, Higashiyama Ward, Kyoto', 34.9959, 135.7788),
-      place('p-kyoto-3', 'Nishiki Market', 'Nishikikoji-dori, Nakagyo Ward, Kyoto', 35.005, 135.7649),
-      place('p-kyoto-4', 'Togetsukyo Bridge', 'Saga Tenryuji, Ukyo Ward, Kyoto', 35.0094, 135.6779),
+      place('p-kyoto-1', 'Kiyomizu-dera', '1-294 Kiyomizu, Higashiyama Ward, Kyoto', 34.9949, 135.785, 'attraction'),
+      place('p-kyoto-2', 'Ninenzaka', 'Ninenzaka, Higashiyama Ward, Kyoto', 34.9959, 135.7788, 'attraction'),
+      place('p-kyoto-3', 'Nishiki Market', 'Nishikikoji-dori, Nakagyo Ward, Kyoto', 35.005, 135.7649, 'food'),
+      place('p-kyoto-4', 'Togetsukyo Bridge', 'Saga Tenryuji, Ukyo Ward, Kyoto', 35.0094, 135.6779, 'nature'),
+    ],
+    days: [
+      day('d-kyoto-1', 'Day 1', ['p-kyoto-1', 'p-kyoto-2']),
+      day('d-kyoto-2', 'Day 2', ['p-kyoto-3', 'p-kyoto-4']),
     ],
     season: 'spring',
     budget: 'mid-range',
@@ -73,11 +81,12 @@ export const demoLists: TripList[] = [
     vibe: 'tacos + design hotels',
     description: 'A social-night route with museums by day and neighborhood taquerias at dusk.',
     places: [
-      place('p-mex-1', 'Roma Norte', 'Roma Norte, Mexico City', 19.42, -99.1637),
-      place('p-mex-2', 'Condesa', 'Condesa, Mexico City', 19.4108, -99.1706),
-      place('p-mex-3', 'Mercado de Coyoacán', 'Ignacio Allende s/n, Coyoacán, Mexico City', 19.355, -99.1625),
-      place('p-mex-4', 'Museo Jumex', 'Blvd. Miguel de Cervantes Saavedra, Mexico City', 19.4392, -99.2016),
+      place('p-mex-1', 'Roma Norte', 'Roma Norte, Mexico City', 19.42, -99.1637, 'attraction'),
+      place('p-mex-2', 'Condesa', 'Condesa, Mexico City', 19.4108, -99.1706, 'attraction'),
+      place('p-mex-3', 'Mercado de Coyoacán', 'Ignacio Allende s/n, Coyoacán, Mexico City', 19.355, -99.1625, 'food'),
+      place('p-mex-4', 'Museo Jumex', 'Blvd. Miguel de Cervantes Saavedra, Mexico City', 19.4392, -99.2016, 'attraction'),
     ],
+    days: [day('d-mex-1', 'Day 1', ['p-mex-1', 'p-mex-4', 'p-mex-3'])],
     season: 'autumn',
     budget: 'mixed',
     createdAt: '2026-06-10T08:00:00.000Z',
@@ -92,11 +101,12 @@ export const demoLists: TripList[] = [
     vibe: 'glaciers + long drives',
     description: 'A wide-open trip list for lake viewpoints, rental cars, and windproof layers.',
     places: [
-      place('p-pat-1', 'Perito Moreno Glacier', 'Los Glaciares National Park, Santa Cruz', -50.4967, -73.0501),
-      place('p-pat-2', 'Lago Argentino', 'Lago Argentino, Santa Cruz', -50.38, -72.38),
-      place('p-pat-3', 'Ruta 40 overlook', 'Ruta Nacional 40, Santa Cruz', -49.95, -71.55),
-      place('p-pat-4', 'Estancia dinners', 'El Calafate, Santa Cruz', -50.25, -72.1),
+      place('p-pat-1', 'Perito Moreno Glacier', 'Los Glaciares National Park, Santa Cruz', -50.4967, -73.0501, 'nature'),
+      place('p-pat-2', 'Lago Argentino', 'Lago Argentino, Santa Cruz', -50.38, -72.38, 'nature'),
+      place('p-pat-3', 'Ruta 40 overlook', 'Ruta Nacional 40, Santa Cruz', -49.95, -71.55, 'nature'),
+      place('p-pat-4', 'Estancia dinners', 'El Calafate, Santa Cruz', -50.25, -72.1, 'food'),
     ],
+    days: [],
     season: 'summer',
     budget: 'high',
     createdAt: '2026-06-15T08:00:00.000Z',
@@ -111,10 +121,14 @@ export const demoLists: TripList[] = [
     vibe: 'sunsets + petiscos',
     description: 'Built for tiled streets, ferry sunsets, and a rooftop dinner at golden hour.',
     places: [
-      place('p-lis-1', 'Alfama', 'Alfama, Lisbon', 38.7139, -9.1301),
-      place('p-lis-2', 'Miradouro de Santa Catarina', 'R. de Santa Catarina, Lisbon', 38.7095, -9.1477),
-      place('p-lis-3', 'LX Factory', 'R. Rodrigues de Faria 103, Lisbon', 38.7028, -9.1778),
-      place('p-lis-4', 'Cais do Sodré', 'Cais do Sodré, Lisbon', 38.7061, -9.1456),
+      place('p-lis-1', 'Alfama', 'Alfama, Lisbon', 38.7139, -9.1301, 'attraction'),
+      place('p-lis-2', 'Miradouro de Santa Catarina', 'R. de Santa Catarina, Lisbon', 38.7095, -9.1477, 'nature'),
+      place('p-lis-3', 'LX Factory', 'R. Rodrigues de Faria 103, Lisbon', 38.7028, -9.1778, 'shopping'),
+      place('p-lis-4', 'Cais do Sodré', 'Cais do Sodré, Lisbon', 38.7061, -9.1456, 'nightlife'),
+    ],
+    days: [
+      day('d-lis-1', 'Day 1', ['p-lis-1', 'p-lis-2']),
+      day('d-lis-2', 'Day 2', ['p-lis-3', 'p-lis-4']),
     ],
     season: 'summer',
     budget: 'mid-range',
@@ -130,11 +144,12 @@ export const demoLists: TripList[] = [
     vibe: 'waterfalls + hot springs',
     description: 'A flexible route of stops for short daylight windows and long horizon views.',
     places: [
-      place('p-ice-1', 'Þingvellir National Park', 'Þingvellir, Iceland', 64.2559, -21.1295),
-      place('p-ice-2', 'Blue Lagoon', 'Norðurljósavegur 9, Grindavík', 63.8804, -22.4495),
-      place('p-ice-3', 'Reynisfjara black sand beach', 'Reynisfjara, Iceland', 63.4052, -19.0446),
-      place('p-ice-4', 'Vík guesthouse dinners', 'Vík í Mýrdal, Iceland', 63.4186, -19.006),
+      place('p-ice-1', 'Þingvellir National Park', 'Þingvellir, Iceland', 64.2559, -21.1295, 'nature'),
+      place('p-ice-2', 'Blue Lagoon', 'Norðurljósavegur 9, Grindavík', 63.8804, -22.4495, 'nature'),
+      place('p-ice-3', 'Reynisfjara black sand beach', 'Reynisfjara, Iceland', 63.4052, -19.0446, 'nature'),
+      place('p-ice-4', 'Vík guesthouse dinners', 'Vík í Mýrdal, Iceland', 63.4186, -19.006, 'food'),
     ],
+    days: [],
     season: 'winter',
     budget: 'high',
     createdAt: '2026-06-25T08:00:00.000Z',
@@ -194,6 +209,7 @@ export const emptyDraft: DraftList = {
   vibe: '',
   description: '',
   places: [],
+  days: [],
   season: 'summer',
   budget: 'mid-range',
 };

@@ -296,12 +296,38 @@ button {
   background: transparent;
   color: var(--muted);
   font-weight: 700;
+  transition: background 180ms ease, color 180ms ease, box-shadow 180ms ease;
 }
 
 .nav-tab--active {
   color: var(--ink);
   background: white;
   box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
+}
+
+.page-transition {
+  animation: page-transition-in 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes page-transition-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-transition {
+    animation: none;
+  }
+
+  .nav-tab {
+    transition: none;
+  }
 }
 
 .topbar__search input {
@@ -780,12 +806,27 @@ button.stat-pill {
 }
 
 .owner-card {
-  display: grid;
-  grid-template-columns: 56px 1fr auto;
-  gap: 12px;
+  display: flex;
   align-items: center;
+  gap: 12px;
   padding: 12px;
   background: rgba(255, 255, 255, 0.72);
+}
+
+.owner-card__hit {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.owner-card__hit > div {
+  min-width: 0;
 }
 
 .owner-card:hover,
@@ -1118,17 +1159,11 @@ button.stat-pill {
   }
 
   .owner-card {
-    grid-template-columns: 56px 1fr;
+    flex-wrap: wrap;
   }
 
   .google-button {
     grid-template-columns: 1fr;
-  }
-
-  .owner-card .secondary-button,
-  .owner-card .owner-card__actions {
-    grid-column: 1 / -1;
-    justify-self: start;
   }
 
   .account-page__profile {
@@ -1179,6 +1214,13 @@ button.stat-pill {
   gap: 10px;
 }
 
+.draft-places__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .place-autocomplete {
   display: grid;
   gap: 8px;
@@ -1204,7 +1246,6 @@ button.stat-pill {
 .draft-place {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
   padding: 10px 12px;
   border: 1px solid var(--border);
@@ -1212,13 +1253,37 @@ button.stat-pill {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.draft-place > div {
+  flex: 1;
+  min-width: 0;
+}
+
 .draft-place strong,
 .draft-place small {
   display: block;
 }
 
+.draft-place strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .draft-place small {
   color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-place__category {
+  flex: 0 0 148px;
+  width: 148px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 0.85rem;
 }
 
 .draft-places__empty {
@@ -1484,14 +1549,26 @@ button.stat-pill {
 }
 
 .people-list__item {
-  display: grid;
-  grid-template-columns: 52px 1fr auto;
-  gap: 12px;
+  display: flex;
   align-items: center;
+  gap: 12px;
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.72);
+}
+
+.people-list__hit {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 12px;
+  align-items: center;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 0;
 }
 
 .people-list__item p {
@@ -1507,4 +1584,356 @@ button.stat-pill {
   place-items: center;
   color: white;
   font-weight: 800;
+}
+
+.trip-plan-editor {
+  display: grid;
+  gap: 14px;
+}
+
+.trip-plan-days {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.trip-day {
+  flex: 0 0 220px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.6);
+  min-height: 140px;
+}
+
+.trip-day__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trip-day__header input.trip-day__label {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 4px 2px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.trip-day__places {
+  display: grid;
+  gap: 8px;
+}
+
+.trip-day__empty {
+  margin: 0;
+  padding: 8px 2px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.trip-day__add {
+  width: 100%;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.trip-place-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: white;
+  cursor: grab;
+}
+
+.trip-place-card:active {
+  cursor: grabbing;
+}
+
+.trip-place-card .trip-place-card__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.88rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink);
+}
+
+.trip-place-card__remove {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.trip-plan-unscheduled {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.02);
+}
+
+.trip-plan-unscheduled__label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.trip-plan-unscheduled__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.trip-plan-unscheduled__list .trip-place-card {
+  flex: 0 0 auto;
+}
+
+.trip-plan-view {
+  display: grid;
+  gap: 10px;
+}
+
+.view-toggle {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.view-toggle .pill {
+  padding: 6px 12px;
+  font-size: 0.82rem;
+}
+
+.trip-timeline {
+  display: grid;
+  gap: 18px;
+}
+
+.trip-timeline__day-label {
+  margin-bottom: 8px;
+  font-weight: 700;
+  font-family: 'Fraunces', serif;
+}
+
+.trip-timeline__item {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+}
+
+.trip-timeline__marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.trip-timeline__dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent-hot), var(--accent-sky));
+  flex-shrink: 0;
+}
+
+.trip-timeline__line {
+  flex: 1;
+  width: 2px;
+  min-height: 24px;
+  margin-top: 2px;
+  background: var(--border);
+}
+
+.trip-timeline__content {
+  padding-bottom: 16px;
+}
+
+.trip-timeline__content strong {
+  display: block;
+}
+
+.trip-timeline__content small {
+  color: var(--muted);
+}
+
+.trip-plan-view__days {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.trip-plan-view__day {
+  flex: 0 0 200px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.trip-plan-view__day ol {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.place-category-group {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.place-category-group__heading {
+  margin-top: 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.place-category-group__label {
+  flex: 1;
+}
+
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.collapsible-chevron {
+  margin-left: auto;
+  transition: transform 180ms ease;
+  color: var(--muted);
+}
+
+.collapsible-chevron--collapsed {
+  transform: rotate(-90deg);
+}
+
+@media (max-width: 820px) {
+  .trip-day,
+  .trip-plan-view__day {
+    flex-basis: 180px;
+  }
+}
+
+.profile-view-modal {
+  width: min(760px, 100%);
+  display: grid;
+  gap: 16px;
+  position: relative;
+}
+
+.profile-view__header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.profile-view__header h2 {
+  margin: 0;
+  font-family: 'Fraunces', serif;
+}
+
+.profile-view__header p {
+  margin: 2px 0 0;
+  color: var(--muted);
+}
+
+.profile-view__avatar {
+  width: 84px;
+  height: 84px;
+  border-radius: 26px;
+  font-size: 1.4rem;
+  flex-shrink: 0;
+}
+
+.profile-view__header > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.import-places-modal {
+  width: min(640px, 100%);
+  display: grid;
+  gap: 16px;
+}
+
+.import-places__panel {
+  display: grid;
+  gap: 10px;
+}
+
+.import-places__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.import-places__upload {
+  width: fit-content;
+}
+
+.import-places__textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.85);
+  resize: vertical;
+}
+
+.import-places__status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.import-places__results {
+  display: grid;
+  gap: 10px;
+}
+
+.import-places__results .draft-places__list {
+  max-height: 320px;
+  overflow-y: auto;
 }
