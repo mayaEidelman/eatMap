@@ -5,7 +5,20 @@ import { PlaceAutocomplete } from './components/PlaceAutocomplete';
 import { CATEGORY_META, groupPlacesByCategory } from './lib/categories';
 import { demoData, emptyDraft } from './mock';
 import { PLACE_CATEGORIES } from './types';
-import type { AppData, DraftList, DraftPlace, PageMode, Place, PlaceCategory, ProfileDraft, Rating, TripDay, TripList } from './types';
+import type {
+  AppData,
+  AttachmentFile,
+  DraftList,
+  DraftPlace,
+  PageMode,
+  Place,
+  PlaceAttachment,
+  PlaceCategory,
+  ProfileDraft,
+  Rating,
+  TripDay,
+  TripList,
+} from './types';
 
 const STORAGE_KEY = 'eatmap-v4';
 const AUTH_STORAGE_KEY = 'eatmap-authenticated-v1';
@@ -440,6 +453,26 @@ function AppShell() {
 
       return { ...current, likes: nextLikes };
     });
+  }
+
+  function updatePlaceAttachment(listId: string, placeId: string, attachment: PlaceAttachment | null) {
+    setData((current) => ({
+      ...current,
+      lists: current.lists.map((list) => {
+        if (list.id !== listId) {
+          return list;
+        }
+
+        const nextAttachments = { ...list.placeAttachments };
+        if (attachment) {
+          nextAttachments[placeId] = attachment;
+        } else {
+          delete nextAttachments[placeId];
+        }
+
+        return { ...list, placeAttachments: nextAttachments };
+      }),
+    }));
   }
 
   function openCreateList() {
@@ -1376,7 +1409,14 @@ function AppShell() {
               )}
             </div>
 
-            <TripPlanView key={`${listDetail.id}-days`} days={listDetail.days} places={listDetail.places} />
+            <TripPlanView
+              key={`${listDetail.id}-days`}
+              days={listDetail.days}
+              places={listDetail.places}
+              isOwner={listDetailOwner?.id === currentUser.id}
+              attachments={listDetailOwner?.id === currentUser.id ? listDetail.placeAttachments ?? {} : null}
+              onSaveAttachment={(placeId, attachment) => updatePlaceAttachment(listDetail.id, placeId, attachment)}
+            />
 
             <SavedPlacesView key={`${listDetail.id}-places`} places={listDetail.places} />
 
@@ -1516,7 +1556,19 @@ function AppShell() {
   );
 }
 
-function TripPlanView({ days, places }: { days: TripDay[]; places: Place[] }) {
+function TripPlanView({
+  days,
+  places,
+  isOwner,
+  attachments,
+  onSaveAttachment,
+}: {
+  days: TripDay[];
+  places: Place[];
+  isOwner: boolean;
+  attachments: Record<string, PlaceAttachment> | null;
+  onSaveAttachment: (placeId: string, attachment: PlaceAttachment | null) => void;
+}) {
   const [viewMode, setViewMode] = useState<'cards' | 'timeline'>('cards');
 
   if (days.length === 0) {
@@ -1593,6 +1645,12 @@ function TripPlanView({ days, places }: { days: TripDay[]; places: Place[] }) {
                           <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span> {place.name}
                         </strong>
                         <small>{place.address}</small>
+                        {isOwner ? (
+                          <TimelineAttachment
+                            attachment={attachments?.[placeId]}
+                            onSave={(value) => onSaveAttachment(placeId, value)}
+                          />
+                        ) : null}
                       </div>
                     </div>
                   );
@@ -1602,6 +1660,148 @@ function TripPlanView({ days, places }: { days: TripDay[]; places: Place[] }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+      } else {
+        reject(new Error('Could not read file.'));
+      }
+    };
+    reader.onerror = () => reject(new Error('Could not read file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function TimelineAttachment({
+  attachment,
+  onSave,
+}: {
+  attachment: PlaceAttachment | undefined;
+  onSave: (attachment: PlaceAttachment | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState(attachment?.note ?? '');
+  const [files, setFiles] = useState<AttachmentFile[]>(attachment?.files ?? []);
+
+  useEffect(() => {
+    setNote(attachment?.note ?? '');
+    setFiles(attachment?.files ?? []);
+  }, [attachment]);
+
+  const hasContent = Boolean(attachment?.note?.trim() || attachment?.files?.length);
+
+  async function handleFiles(event: ChangeEvent<HTMLInputElement>) {
+    const selected = event.target.files;
+    if (!selected || selected.length === 0) {
+      return;
+    }
+
+    const added = await Promise.all(
+      Array.from(selected).map(async (file) => ({
+        id: crypto.randomUUID(),
+        fileName: file.name,
+        fileType: file.type,
+        fileDataUrl: await readFileAsDataUrl(file),
+      })),
+    );
+
+    setFiles((current) => [...current, ...added]);
+    event.target.value = '';
+  }
+
+  function removeFile(id: string) {
+    setFiles((current) => current.filter((file) => file.id !== id));
+  }
+
+  function save() {
+    const trimmedNote = note.trim();
+    if (!trimmedNote && files.length === 0) {
+      onSave(null);
+    } else {
+      onSave({ note: trimmedNote, files });
+    }
+    setOpen(false);
+  }
+
+  function cancel() {
+    setNote(attachment?.note ?? '');
+    setFiles(attachment?.files ?? []);
+    setOpen(false);
+  }
+
+  return (
+    <div className="timeline-attachment">
+      <button
+        type="button"
+        className={`timeline-attachment__toggle${hasContent ? ' timeline-attachment__toggle--active' : ''}`}
+        onClick={() => setOpen((current) => !current)}
+        aria-label={hasContent ? 'View private attachment' : 'Add private attachment'}
+        title={hasContent ? 'Private attachment' : 'Add private attachment'}
+      >
+        📎
+      </button>
+
+      {open ? (
+        <div className="timeline-attachment__panel">
+          <span className="timeline-attachment__badge">🔒 Only you can see this</span>
+          <textarea
+            className="timeline-attachment__textarea"
+            rows={2}
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Confirmation #, booking ref, notes..."
+            autoFocus
+          />
+          {files.length > 0 ? (
+            <div className="timeline-attachment__files">
+              {files.map((file) => (
+                <div key={file.id} className="timeline-attachment__file">
+                  <a
+                    href={file.fileDataUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="timeline-attachment__file-link"
+                    title={`Open ${file.fileName}`}
+                  >
+                    {file.fileType.startsWith('image/') ? (
+                      <img src={file.fileDataUrl} alt={file.fileName} className="timeline-attachment__thumb" />
+                    ) : (
+                      <span className="timeline-attachment__filechip">📄 {file.fileName}</span>
+                    )}
+                  </a>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    onClick={() => removeFile(file.id)}
+                    aria-label={`Remove ${file.fileName}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <label className="secondary-button timeline-attachment__upload">
+            Attach image or PDF
+            <input type="file" accept="image/*,application/pdf" multiple onChange={handleFiles} hidden />
+          </label>
+          <div className="timeline-attachment__actions">
+            <button type="button" className="secondary-button" onClick={cancel}>
+              Cancel
+            </button>
+            <button type="button" className="primary-button" onClick={save}>
+              Save
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

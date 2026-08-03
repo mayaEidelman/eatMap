@@ -27,6 +27,19 @@ export type TripDay = {
   placeIds: string[];
 };
 
+export type AttachmentFile = {
+  id: string;
+  fileName: string;
+  fileType: string;
+  fileDataUrl: string;
+};
+
+/** A private note and/or files (images or PDFs) attached to a place. Visible only to the list owner. */
+export type PlaceAttachment = {
+  note: string;
+  files: AttachmentFile[];
+};
+
 export type TripList = {
   id: string;
   ownerId: string;
@@ -41,6 +54,8 @@ export type TripList = {
   season: string;
   budget: string;
   createdAt: string;
+  /** Private attachments per place (booking notes, tickets, confirmations). Visible only to the list owner. */
+  placeAttachments?: Record<string, PlaceAttachment>;
 };
 
 export type Rating = {

@@ -1783,6 +1783,123 @@ button.stat-pill {
   color: var(--muted);
 }
 
+.timeline-attachment {
+  margin-top: 6px;
+}
+
+.timeline-attachment__toggle {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 0.82rem;
+  line-height: 1;
+  color: var(--muted);
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+
+.timeline-attachment__toggle--active {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.14);
+  filter: none;
+  opacity: 1;
+}
+
+.timeline-attachment__panel {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.08);
+  display: grid;
+  gap: 8px;
+  max-width: 320px;
+}
+
+.timeline-attachment__badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #b45309;
+}
+
+.timeline-attachment__textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: white;
+  font-size: 0.86rem;
+  resize: vertical;
+}
+
+.timeline-attachment__upload {
+  width: fit-content;
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+}
+
+.timeline-attachment__files {
+  display: grid;
+  gap: 6px;
+}
+
+.timeline-attachment__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeline-attachment__file-link {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  color: inherit;
+  text-decoration: none;
+}
+
+.timeline-attachment__file-link:hover {
+  text-decoration: underline;
+}
+
+.timeline-attachment__thumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.timeline-attachment__filechip {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.84rem;
+}
+
+.timeline-attachment__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.timeline-attachment__actions .secondary-button,
+.timeline-attachment__actions .primary-button {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+}
+
 .trip-plan-view__days {
   display: flex;
   gap: 12px;

@@ -90,6 +90,9 @@ export const demoLists: TripList[] = [
     season: 'autumn',
     budget: 'mixed',
     createdAt: '2026-06-10T08:00:00.000Z',
+    placeAttachments: {
+      'p-mex-4': { note: 'Museo Jumex tickets booked for 11am, confirmation #JX-88213.', files: [] },
+    },
   },
   {
     id: 'list-patagonia',
