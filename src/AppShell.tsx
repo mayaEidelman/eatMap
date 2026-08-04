@@ -1,8 +1,9 @@
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ImportPlacesModal } from './components/ImportPlacesModal';
 import { MapPanel } from './components/MapPanel';
 import { PlaceAutocomplete } from './components/PlaceAutocomplete';
 import { CATEGORY_META, groupPlacesByCategory } from './lib/categories';
+import { renderGoogleSignInButton, type GoogleProfile } from './lib/googleAuth';
 import { demoData, emptyDraft } from './mock';
 import { PLACE_CATEGORIES } from './types';
 import type {
@@ -18,6 +19,7 @@ import type {
   Rating,
   TripDay,
   TripList,
+  User,
 } from './types';
 
 const STORAGE_KEY = 'eatmap-v4';
@@ -130,6 +132,38 @@ function formatRating(value: number) {
   return value ? value.toFixed(1) : 'New';
 }
 
+const ACCENT_PALETTE = [
+  'linear-gradient(135deg, #f97316, #fb7185)',
+  'linear-gradient(135deg, #14b8a6, #0f766e)',
+  'linear-gradient(135deg, #2563eb, #7c3aed)',
+  'linear-gradient(135deg, #ea580c, #f43f5e)',
+  'linear-gradient(135deg, #0ea5e9, #6366f1)',
+];
+
+function pickAccent() {
+  return ACCENT_PALETTE[Math.floor(Math.random() * ACCENT_PALETTE.length)];
+}
+
+function buildInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const initials = parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('');
+  return initials || 'U';
+}
+
+function buildHandle(name: string, users: User[]) {
+  const base = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '') || 'traveler';
+  let handle = `@${base}`;
+  let suffix = 1;
+  while (users.some((user) => user.handle === handle)) {
+    handle = `@${base}${suffix}`;
+    suffix += 1;
+  }
+  return handle;
+}
+
 function buildProfileDraft(user: AppData['users'][number]): ProfileDraft {
   return {
     name: user.name,
@@ -209,6 +243,9 @@ function AppShell() {
   const [data, setData] = useState<AppData>(loadData);
   const [isAuthenticated, setIsAuthenticated] = useState(loadAuthState);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [googleButtonError, setGoogleButtonError] = useState<string | null>(null);
+  const [localName, setLocalName] = useState('');
+  const googleButtonRef = useRef<HTMLDivElement | null>(null);
   const [page, setPage] = useState<PageMode>('home');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [search, setSearch] = useState('');
@@ -232,6 +269,15 @@ function AppShell() {
 
   useEffect(() => {
     persistAuthState(isAuthenticated);
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated || !googleButtonRef.current) {
+      return;
+    }
+
+    setGoogleButtonError(null);
+    renderGoogleSignInButton(googleButtonRef.current, handleGoogleSignIn, setGoogleButtonError);
   }, [isAuthenticated]);
 
   const currentUser = data.users.find((user) => user.id === data.currentUserId) ?? data.users[0];
@@ -389,7 +435,81 @@ function AppShell() {
     setIsAuthenticated(true);
   }
 
-  function continueWithGoogle() {
+  function handleGoogleSignIn(profile: GoogleProfile) {
+    setData((current) => {
+      const existing = current.users.find((user) => user.googleId === profile.googleId);
+
+      if (existing) {
+        return {
+          ...current,
+          currentUserId: existing.id,
+          users: current.users.map((user) =>
+            user.id === existing.id
+              ? { ...user, name: profile.name, email: profile.email, avatarImage: profile.picture ?? user.avatarImage }
+              : user,
+          ),
+        };
+      }
+
+      const newUser: User = {
+        id: crypto.randomUUID(),
+        name: profile.name,
+        handle: buildHandle(profile.name, current.users),
+        city: '',
+        bio: '',
+        avatar: buildInitials(profile.name),
+        avatarImage: profile.picture,
+        accent: pickAccent(),
+        googleId: profile.googleId,
+        email: profile.email,
+      };
+
+      return {
+        ...current,
+        users: [...current.users, newUser],
+        currentUserId: newUser.id,
+      };
+    });
+
+    setPage('home');
+    setIsAuthenticated(true);
+  }
+
+  function createLocalAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedName = localName.trim();
+    if (!trimmedName) {
+      return;
+    }
+
+    setData((current) => {
+      const existing = current.users.find(
+        (user) => !user.googleId && user.name.trim().toLowerCase() === trimmedName.toLowerCase(),
+      );
+
+      if (existing) {
+        return { ...current, currentUserId: existing.id };
+      }
+
+      const newUser: User = {
+        id: crypto.randomUUID(),
+        name: trimmedName,
+        handle: buildHandle(trimmedName, current.users),
+        city: '',
+        bio: '',
+        avatar: buildInitials(trimmedName),
+        accent: pickAccent(),
+      };
+
+      return {
+        ...current,
+        users: [...current.users, newUser],
+        currentUserId: newUser.id,
+      };
+    });
+
+    setLocalName('');
+    setPage('home');
     setIsAuthenticated(true);
   }
 
@@ -695,18 +815,37 @@ function AppShell() {
             </button>
           </div>
 
-          <button className="google-button" type="button" onClick={continueWithGoogle}>
-            <span className="google-button__mark">G</span>
-            <span>
-              <strong>{authMode === 'login' ? 'Continue with Google' : 'Create with Google'}</strong>
-              <small>{authMode === 'login' ? 'Enter the app with your Google account.' : 'Start your profile with Google.'}</small>
-            </span>
-          </button>
+          <div className="auth-screen__google">
+            <div ref={googleButtonRef} className="google-button-mount" />
+            {googleButtonError ? <p className="place-autocomplete__error">{googleButtonError}</p> : null}
+          </div>
+
+          <div className="auth-divider">
+            <span>or</span>
+          </div>
+
+          <form className="auth-local-form" onSubmit={createLocalAccount}>
+            <label>
+              <span>{authMode === 'login' ? 'Your name' : 'Choose a display name'}</span>
+              <input
+                value={localName}
+                onChange={(event) => setLocalName(event.target.value)}
+                placeholder="e.g. Jordan Rivera"
+                required
+              />
+            </label>
+            <button className="primary-button" type="submit">
+              Continue without Google
+            </button>
+            <p className="auth-local-form__hint">
+              No password needed — this creates a profile stored only in this browser.
+            </p>
+          </form>
 
           <div className="auth-screen__demo">
             <div className="section-heading">
               <h3>Demo travelers</h3>
-              <span>pick one to preview the app</span>
+              <span>or preview the app as a seeded traveler</span>
             </div>
             <div className="auth-demo-grid">
               {data.users.map((user) => (
@@ -726,24 +865,6 @@ function AppShell() {
             </div>
           </div>
         </section>
-
-        <aside className="auth-screen__art panel">
-          <div className="auth-screen__orb auth-screen__orb--one" />
-          <div className="auth-screen__orb auth-screen__orb--two" />
-          <div className="auth-screen__preview">
-            <p className="eyebrow">What you get after login</p>
-            <h2>Map home, explore feed, account, and DMs.</h2>
-            <ul>
-              <li>Your map with your lists and saved lists</li>
-              <li>Explore lists and travelers like a social app</li>
-              <li>Account page shows every list you have created</li>
-              <li>DM travelers about routes</li>
-            </ul>
-          </div>
-          <button className="secondary-button auth-screen__signout" type="button" onClick={signOut}>
-            Reset session
-          </button>
-        </aside>
       </div>
     );
   }

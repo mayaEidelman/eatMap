@@ -7,6 +7,9 @@ export type User = {
   avatar: string;
   avatarImage?: string;
   accent: string;
+  /** Present when this account was created via real Google sign-in. */
+  googleId?: string;
+  email?: string;
 };
 
 export const PLACE_CATEGORIES = ['food', 'attraction', 'hotel', 'cafe', 'shopping', 'nature', 'nightlife', 'other'] as const;
