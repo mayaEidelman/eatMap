@@ -1787,6 +1787,35 @@ button.stat-pill {
   margin-top: 6px;
 }
 
+.timeline-attachment__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.timeline-attachment__minichip {
+  width: 36px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.timeline-attachment__minithumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.timeline-attachment__minidoc {
+  font-size: 0.78rem;
+}
+
 .timeline-attachment__toggle {
   width: 26px;
   height: 26px;

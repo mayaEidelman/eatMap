@@ -1738,15 +1738,38 @@ function TimelineAttachment({
 
   return (
     <div className="timeline-attachment">
-      <button
-        type="button"
-        className={`timeline-attachment__toggle${hasContent ? ' timeline-attachment__toggle--active' : ''}`}
-        onClick={() => setOpen((current) => !current)}
-        aria-label={hasContent ? 'View private attachment' : 'Add private attachment'}
-        title={hasContent ? 'Private attachment' : 'Add private attachment'}
-      >
-        📎
-      </button>
+      <div className="timeline-attachment__row">
+        <button
+          type="button"
+          className={`timeline-attachment__toggle${hasContent ? ' timeline-attachment__toggle--active' : ''}`}
+          onClick={() => setOpen((current) => !current)}
+          aria-label={hasContent ? 'Edit private attachment' : 'Add private attachment'}
+          title={hasContent ? 'Edit private attachment' : 'Add private attachment'}
+        >
+          📎
+        </button>
+
+        {!open && files.length > 0
+          ? files.map((file) => (
+              <a
+                key={file.id}
+                href={file.fileDataUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="timeline-attachment__minichip"
+                title={`Open ${file.fileName}`}
+              >
+                {file.fileType.startsWith('image/') ? (
+                  <img src={file.fileDataUrl} alt={file.fileName} className="timeline-attachment__minithumb" />
+                ) : (
+                  <span className="timeline-attachment__minidoc" aria-hidden="true">
+                    📄
+                  </span>
+                )}
+              </a>
+            ))
+          : null}
+      </div>
 
       {open ? (
         <div className="timeline-attachment__panel">
