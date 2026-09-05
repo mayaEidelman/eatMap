@@ -1,10 +1,16 @@
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { ImportPlacesModal } from './components/ImportPlacesModal';
 import { MapPanel } from './components/MapPanel';
 import { PlaceAutocomplete } from './components/PlaceAutocomplete';
 import { CATEGORY_META, groupPlacesByCategory } from './lib/categories';
-import { renderGoogleSignInButton, type GoogleProfile } from './lib/googleAuth';
-import { demoData, emptyDraft } from './mock';
+import { useAppActions } from './hooks/useAppActions';
+import { useAppData } from './hooks/useAppData';
+import { useAuthSession } from './hooks/useAuthSession';
+import { useMessages } from './hooks/useMessages';
+import { signInWithGoogle, signInWithMagicLink, signOut as signOutOfSupabase } from './lib/supabaseAuth';
+import { isSupabaseConfigured, supabaseConfigError } from './lib/supabaseClient';
+import { uploadAttachmentFile, uploadPublicMedia } from './lib/storage';
+import { emptyDraft } from './mock';
 import { PLACE_CATEGORIES } from './types';
 import type {
   AppData,
@@ -22,58 +28,7 @@ import type {
   User,
 } from './types';
 
-const STORAGE_KEY = 'eatmap-v4';
-const AUTH_STORAGE_KEY = 'eatmap-authenticated-v1';
 const DEFAULT_COVER = 'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?q=80&w=1200&auto=format&fit=crop';
-
-function cloneData(): AppData {
-  return structuredClone(demoData);
-}
-
-function loadData(): AppData {
-  if (typeof window === 'undefined') {
-    return cloneData();
-  }
-
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return cloneData();
-    }
-
-    const parsed = JSON.parse(raw) as AppData;
-    const hasValidShape =
-      parsed.users?.length &&
-      parsed.lists?.length &&
-      parsed.savedLists &&
-      parsed.likes &&
-      parsed.lists.every((list) => Array.isArray(list.days) && list.places.every((place) => Boolean(place.category)));
-
-    if (!hasValidShape) {
-      return cloneData();
-    }
-
-    return parsed;
-  } catch {
-    return cloneData();
-  }
-}
-
-function persistData(data: AppData) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-}
-
-function loadAuthState() {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  return window.localStorage.getItem(AUTH_STORAGE_KEY) === 'true';
-}
-
-function persistAuthState(isAuthenticated: boolean) {
-  window.localStorage.setItem(AUTH_STORAGE_KEY, String(isAuthenticated));
-}
 
 function getListSummary(listId: string, ratings: Rating[]) {
   const matching = ratings.filter((rating) => rating.listId === listId);
@@ -132,38 +87,6 @@ function formatRating(value: number) {
   return value ? value.toFixed(1) : 'New';
 }
 
-const ACCENT_PALETTE = [
-  'linear-gradient(135deg, #f97316, #fb7185)',
-  'linear-gradient(135deg, #14b8a6, #0f766e)',
-  'linear-gradient(135deg, #2563eb, #7c3aed)',
-  'linear-gradient(135deg, #ea580c, #f43f5e)',
-  'linear-gradient(135deg, #0ea5e9, #6366f1)',
-];
-
-function pickAccent() {
-  return ACCENT_PALETTE[Math.floor(Math.random() * ACCENT_PALETTE.length)];
-}
-
-function buildInitials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const initials = parts
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('');
-  return initials || 'U';
-}
-
-function buildHandle(name: string, users: User[]) {
-  const base = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '') || 'traveler';
-  let handle = `@${base}`;
-  let suffix = 1;
-  while (users.some((user) => user.handle === handle)) {
-    handle = `@${base}${suffix}`;
-    suffix += 1;
-  }
-  return handle;
-}
-
 function buildProfileDraft(user: AppData['users'][number]): ProfileDraft {
   return {
     name: user.name,
@@ -205,89 +128,42 @@ function filterByQuery(lists: TripList[], query: string) {
   );
 }
 
-type DirectMessage = {
-  id: string;
-  fromId: string;
-  toId: string;
-  text: string;
-  createdAt: string;
-};
-
-function seedMessages(): DirectMessage[] {
-  return [
-    {
-      id: 'dm-1',
-      fromId: 'u-sofia',
-      toId: 'u-noah',
-      text: 'Send me the Kyoto route. I want to save that list.',
-      createdAt: '2026-07-25T12:20:00.000Z',
-    },
-    {
-      id: 'dm-2',
-      fromId: 'u-noah',
-      toId: 'u-sofia',
-      text: 'Already pinned. Check the map and the tea house notes.',
-      createdAt: '2026-07-25T12:24:00.000Z',
-    },
-    {
-      id: 'dm-3',
-      fromId: 'u-maya',
-      toId: 'u-aya',
-      text: 'I want to save your Lisbon rooftop list next.',
-      createdAt: '2026-07-26T09:10:00.000Z',
-    },
-  ];
-}
+const EMPTY_PROFILE_DRAFT: ProfileDraft = { name: '', handle: '', city: '', bio: '', avatar: '', avatarImage: '' };
 
 function AppShell() {
-  const [data, setData] = useState<AppData>(loadData);
-  const [isAuthenticated, setIsAuthenticated] = useState(loadAuthState);
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
-  const [googleButtonError, setGoogleButtonError] = useState<string | null>(null);
-  const [localName, setLocalName] = useState('');
-  const googleButtonRef = useRef<HTMLDivElement | null>(null);
+  const { currentUserId, isAuthenticated, isLoading: authLoading } = useAuthSession();
+  const { data, isLoading: dataLoading, error: dataError } = useAppData(currentUserId);
+  const actions = useAppActions(currentUserId);
+  const { messages: dmMessages, sendMessage: sendDmMessage } = useMessages(currentUserId);
+
+  const [magicLinkEmail, setMagicLinkEmail] = useState('');
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
   const [page, setPage] = useState<PageMode>('home');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [search, setSearch] = useState('');
-  const [selectedListId, setSelectedListId] = useState(data.lists[0]?.id ?? '');
+  const [selectedListId, setSelectedListId] = useState('');
   const [listDetailId, setListDetailId] = useState<string | null>(null);
   const [peopleListOpen, setPeopleListOpen] = useState<{ userId: string; mode: 'followers' | 'following' } | null>(null);
   const [viewedProfileId, setViewedProfileId] = useState<string | null>(null);
-  const [dmThreadUserId, setDmThreadUserId] = useState<string>(data.users.find((user) => user.id !== data.currentUserId)?.id ?? '');
+  const [dmThreadUserId, setDmThreadUserId] = useState<string>('');
   const [dmDraft, setDmDraft] = useState('');
-  const [dmMessages, setDmMessages] = useState<DirectMessage[]>(seedMessages);
   const [composerOpen, setComposerOpen] = useState(false);
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [listFormMode, setListFormMode] = useState<'create' | 'edit'>('create');
   const [draft, setDraft] = useState<DraftList>(emptyDraft);
-  const [profileDraft, setProfileDraft] = useState<ProfileDraft>(buildProfileDraft(data.users[0]));
+  const [profileDraft, setProfileDraft] = useState<ProfileDraft>(EMPTY_PROFILE_DRAFT);
   const [importPlacesOpen, setImportPlacesOpen] = useState(false);
 
-  useEffect(() => {
-    persistData(data);
-  }, [data]);
+  const currentUser = data ? data.users.find((user) => user.id === data.currentUserId) : undefined;
+  const selectedList = data ? data.lists.find((list) => list.id === selectedListId) ?? data.lists[0] : undefined;
 
   useEffect(() => {
-    persistAuthState(isAuthenticated);
-  }, [isAuthenticated]);
-
-  useEffect(() => {
-    if (isAuthenticated || !googleButtonRef.current) {
-      return;
-    }
-
-    setGoogleButtonError(null);
-    renderGoogleSignInButton(googleButtonRef.current, handleGoogleSignIn, setGoogleButtonError);
-  }, [isAuthenticated]);
-
-  const currentUser = data.users.find((user) => user.id === data.currentUserId) ?? data.users[0];
-  const selectedList = data.lists.find((list) => list.id === selectedListId) ?? data.lists[0];
-
-  useEffect(() => {
-    if (!selectedList && data.lists[0]) {
+    if (data && !selectedList && data.lists[0]) {
       setSelectedListId(data.lists[0].id);
     }
-  }, [data.lists, selectedList]);
+  }, [data, selectedList]);
 
   useEffect(() => {
     if (currentUser) {
@@ -373,19 +249,18 @@ function AppShell() {
     }));
   }, []);
 
-  const exploreLists = useMemo(() => filterByQuery(data.lists, search), [data.lists, search]);
+  const exploreLists = useMemo(() => (data ? filterByQuery(data.lists, search) : []), [data, search]);
 
-  const accountLists = useMemo(
-    () => data.lists.filter((list) => list.ownerId === data.currentUserId),
-    [data.currentUserId, data.lists],
-  );
+  const accountLists = useMemo(() => (data ? data.lists.filter((list) => list.ownerId === data.currentUserId) : []), [data]);
 
   const savedLists = useMemo(
     () =>
-      data.lists.filter(
-        (list) => list.ownerId !== data.currentUserId && isSaved(data.savedLists, data.currentUserId, list.id),
-      ),
-    [data.currentUserId, data.lists, data.savedLists],
+      data
+        ? data.lists.filter(
+            (list) => list.ownerId !== data.currentUserId && isSaved(data.savedLists, data.currentUserId, list.id),
+          )
+        : [],
+    [data],
   );
 
   const myMapLists = useMemo(() => {
@@ -400,23 +275,21 @@ function AppShell() {
     );
   }, [accountLists, savedLists, search]);
 
-  const peopleToFollow = useMemo(
-    () => data.users.filter((user) => user.id !== data.currentUserId),
-    [data.currentUserId, data.users],
-  );
+  const peopleToFollow = useMemo(() => (data ? data.users.filter((user) => user.id !== data.currentUserId) : []), [data]);
 
-  const listDetail = data.lists.find((list) => list.id === listDetailId) ?? null;
-  const listDetailOwner = listDetail ? data.users.find((user) => user.id === listDetail.ownerId) : undefined;
+  const listDetail = data ? data.lists.find((list) => list.id === listDetailId) ?? null : null;
+  const listDetailOwner = data && listDetail ? data.users.find((user) => user.id === listDetail.ownerId) : undefined;
 
-  const viewedProfile = data.users.find((user) => user.id === viewedProfileId) ?? null;
-  const viewedProfileStats = viewedProfile ? getUserStats(viewedProfile.id, data) : null;
-  const viewedProfileLists = viewedProfile ? data.lists.filter((list) => list.ownerId === viewedProfile.id) : [];
+  const viewedProfile = data ? data.users.find((user) => user.id === viewedProfileId) ?? null : null;
+  const viewedProfileStats = data && viewedProfile ? getUserStats(viewedProfile.id, data) : null;
+  const viewedProfileLists = data && viewedProfile ? data.lists.filter((list) => list.ownerId === viewedProfile.id) : [];
 
-  const peopleListUsers = peopleListOpen
-    ? peopleListOpen.mode === 'followers'
-      ? getFollowerUsers(peopleListOpen.userId, data)
-      : getFollowingUsers(peopleListOpen.userId, data)
-    : [];
+  const peopleListUsers =
+    data && peopleListOpen
+      ? peopleListOpen.mode === 'followers'
+        ? getFollowerUsers(peopleListOpen.userId, data)
+        : getFollowingUsers(peopleListOpen.userId, data)
+      : [];
 
   useEffect(() => {
     if (!dmThreadUserId && peopleToFollow[0]) {
@@ -424,175 +297,161 @@ function AppShell() {
     }
   }, [dmThreadUserId, peopleToFollow]);
 
-  const listDetailRatingSummary = listDetail ? getListSummary(listDetail.id, data.ratings) : { count: 0, average: 0 };
-  const listDetailYourRating = listDetail
-    ? data.ratings.find((rating) => rating.listId === listDetail.id && rating.userId === data.currentUserId)
-    : undefined;
+  const listDetailRatingSummary =
+    data && listDetail ? getListSummary(listDetail.id, data.ratings) : { count: 0, average: 0 };
+  const listDetailYourRating =
+    data && listDetail
+      ? data.ratings.find((rating) => rating.listId === listDetail.id && rating.userId === data.currentUserId)
+      : undefined;
 
-  function login(userId: string) {
-    setData((current) => ({ ...current, currentUserId: userId }));
-    setPage('home');
-    setIsAuthenticated(true);
-  }
-
-  function handleGoogleSignIn(profile: GoogleProfile) {
-    setData((current) => {
-      const existing = current.users.find((user) => user.googleId === profile.googleId);
-
-      if (existing) {
-        return {
-          ...current,
-          currentUserId: existing.id,
-          users: current.users.map((user) =>
-            user.id === existing.id
-              ? { ...user, name: profile.name, email: profile.email, avatarImage: profile.picture ?? user.avatarImage }
-              : user,
-          ),
-        };
-      }
-
-      const newUser: User = {
-        id: crypto.randomUUID(),
-        name: profile.name,
-        handle: buildHandle(profile.name, current.users),
-        city: '',
-        bio: '',
-        avatar: buildInitials(profile.name),
-        avatarImage: profile.picture,
-        accent: pickAccent(),
-        googleId: profile.googleId,
-        email: profile.email,
-      };
-
-      return {
-        ...current,
-        users: [...current.users, newUser],
-        currentUserId: newUser.id,
-      };
-    });
-
-    setPage('home');
-    setIsAuthenticated(true);
-  }
-
-  function createLocalAccount(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmedName = localName.trim();
-    if (!trimmedName) {
-      return;
+  const stats = useMemo(() => {
+    if (!data || !currentUser) {
+      return { followers: 0, following: 0, trips: 0, avgRating: 0 };
     }
 
-    setData((current) => {
-      const existing = current.users.find(
-        (user) => !user.googleId && user.name.trim().toLowerCase() === trimmedName.toLowerCase(),
-      );
+    return getUserStats(currentUser.id, data);
+  }, [currentUser, data]);
 
-      if (existing) {
-        return { ...current, currentUserId: existing.id };
+  if (authLoading) {
+    return (
+      <div className="auth-screen">
+        <section className="auth-screen__panel panel">
+          <div className="auth-screen__badge">EatMap</div>
+          <p>Loading…</p>
+        </section>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    async function handleGoogleSignInClick() {
+      setAuthError(null);
+      try {
+        await signInWithGoogle();
+      } catch (error) {
+        setAuthError(error instanceof Error ? error.message : 'Could not start Google sign-in.');
+      }
+    }
+
+    async function sendMagicLink(event: FormEvent<HTMLFormElement>) {
+      event.preventDefault();
+      const email = magicLinkEmail.trim();
+      if (!email) {
+        return;
       }
 
-      const newUser: User = {
-        id: crypto.randomUUID(),
-        name: trimmedName,
-        handle: buildHandle(trimmedName, current.users),
-        city: '',
-        bio: '',
-        avatar: buildInitials(trimmedName),
-        accent: pickAccent(),
-      };
+      setAuthError(null);
+      try {
+        await signInWithMagicLink(email);
+        setMagicLinkSent(true);
+      } catch (error) {
+        setAuthError(error instanceof Error ? error.message : 'Could not send the sign-in link.');
+      }
+    }
 
-      return {
-        ...current,
-        users: [...current.users, newUser],
-        currentUserId: newUser.id,
-      };
-    });
+    return (
+      <div className="auth-screen">
+        <section className="auth-screen__panel panel">
+          <div className="auth-screen__badge">EatMap</div>
+          <div className="auth-screen__copy">
+            <p className="eyebrow">Trip planning social map</p>
+            <h1>Sign in to continue.</h1>
+            <p>Use Google to get into your trip map, explore other travelers, and manage your own saved lists.</p>
+          </div>
 
-    setLocalName('');
-    setPage('home');
-    setIsAuthenticated(true);
+          {supabaseConfigError ? <p className="place-autocomplete__error">{supabaseConfigError}</p> : null}
+
+          <button
+            className="primary-button auth-screen__google-button"
+            type="button"
+            onClick={handleGoogleSignInClick}
+            disabled={!isSupabaseConfigured}
+          >
+            Continue with Google
+          </button>
+
+          <div className="auth-divider">
+            <span>or</span>
+          </div>
+
+          {magicLinkSent ? (
+            <p className="auth-local-form__hint">
+              Check <strong>{magicLinkEmail}</strong> for a sign-in link.
+            </p>
+          ) : (
+            <form className="auth-local-form" onSubmit={sendMagicLink}>
+              <label>
+                <span>Email</span>
+                <input
+                  type="email"
+                  value={magicLinkEmail}
+                  onChange={(event) => setMagicLinkEmail(event.target.value)}
+                  placeholder="you@example.com"
+                  required
+                />
+              </label>
+              <button className="secondary-button" type="submit" disabled={!isSupabaseConfigured}>
+                Email me a sign-in link
+              </button>
+              <p className="auth-local-form__hint">No password needed — we'll email you a one-time link.</p>
+            </form>
+          )}
+
+          {authError ? <p className="place-autocomplete__error">{authError}</p> : null}
+        </section>
+      </div>
+    );
   }
+
+  if (dataLoading || !data || !currentUser) {
+    return (
+      <div className="auth-screen">
+        <section className="auth-screen__panel panel">
+          <div className="auth-screen__badge">EatMap</div>
+          <p>{dataError ? 'Something went wrong loading your trips.' : 'Loading your trips…'}</p>
+        </section>
+      </div>
+    );
+  }
+
+  // Named separately from `data`/`currentUser` above: those are typed as possibly-null/undefined
+  // because they're read before this guard runs, and TypeScript can't see across the closures
+  // below that this guard has already ruled that out by the time they're ever called.
+  const appData: AppData = data;
+  const appUser: User = currentUser;
 
   function signOut() {
-    setIsAuthenticated(false);
+    void signOutOfSupabase();
   }
 
-  function sendDirectMessage() {
+  async function sendDirectMessage() {
     const text = dmDraft.trim();
     if (!text || !dmThreadUserId) {
       return;
     }
 
-    setDmMessages((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        fromId: data.currentUserId,
-        toId: dmThreadUserId,
-        text,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
+    await sendDmMessage(dmThreadUserId, text);
     setDmDraft('');
   }
 
-  function toggleFollow(targetUserId: string) {
-    if (targetUserId === data.currentUserId) {
+  async function toggleFollow(targetUserId: string) {
+    if (targetUserId === appData.currentUserId) {
       return;
     }
 
-    setData((current) => {
-      const exists = isFollowing(current.follows, current.currentUserId, targetUserId);
-      const follows = exists
-        ? current.follows.filter(
-            (follow) => !(follow.followerId === current.currentUserId && follow.followingId === targetUserId),
-          )
-        : [...current.follows, { followerId: current.currentUserId, followingId: targetUserId }];
-
-      return { ...current, follows };
-    });
+    await actions.toggleFollow(targetUserId, isFollowing(appData.follows, appData.currentUserId, targetUserId));
   }
 
-  function toggleSaveList(listId: string) {
-    setData((current) => {
-      const exists = isSaved(current.savedLists, current.currentUserId, listId);
-      const nextSavedLists = exists
-        ? current.savedLists.filter((saved) => !(saved.userId === current.currentUserId && saved.listId === listId))
-        : [...current.savedLists, { userId: current.currentUserId, listId }];
-
-      return { ...current, savedLists: nextSavedLists };
-    });
+  async function toggleSaveList(listId: string) {
+    await actions.toggleSaveList(listId, isSaved(appData.savedLists, appData.currentUserId, listId));
   }
 
-  function toggleLike(listId: string) {
-    setData((current) => {
-      const exists = isLiked(current.likes, current.currentUserId, listId);
-      const nextLikes = exists
-        ? current.likes.filter((like) => !(like.userId === current.currentUserId && like.listId === listId))
-        : [...current.likes, { userId: current.currentUserId, listId }];
-
-      return { ...current, likes: nextLikes };
-    });
+  async function toggleLike(listId: string) {
+    await actions.toggleLike(listId, isLiked(appData.likes, appData.currentUserId, listId));
   }
 
-  function updatePlaceAttachment(listId: string, placeId: string, attachment: PlaceAttachment | null) {
-    setData((current) => ({
-      ...current,
-      lists: current.lists.map((list) => {
-        if (list.id !== listId) {
-          return list;
-        }
-
-        const nextAttachments = { ...list.placeAttachments };
-        if (attachment) {
-          nextAttachments[placeId] = attachment;
-        } else {
-          delete nextAttachments[placeId];
-        }
-
-        return { ...list, placeAttachments: nextAttachments };
-      }),
-    }));
+  async function updatePlaceAttachment(placeId: string, attachment: PlaceAttachment | null) {
+    await actions.saveAttachment(placeId, attachment);
   }
 
   function openCreateList() {
@@ -602,7 +461,7 @@ function AppShell() {
   }
 
   function openProfileEditor() {
-    setProfileDraft(buildProfileDraft(currentUser));
+    setProfileDraft(buildProfileDraft(appUser));
     setProfileEditorOpen(true);
   }
 
@@ -625,7 +484,7 @@ function AppShell() {
   }
 
   function openProfile(userId: string) {
-    if (userId === data.currentUserId) {
+    if (userId === appData.currentUserId) {
       setListDetailId(null);
       setPeopleListOpen(null);
       setViewedProfileId(null);
@@ -638,235 +497,60 @@ function AppShell() {
     setViewedProfileId(userId);
   }
 
-  function handleCoverFile(event: ChangeEvent<HTMLInputElement>) {
+  async function handleCoverFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setDraft((current) => ({ ...current, coverImage: reader.result as string }));
-      }
-    };
-    reader.readAsDataURL(file);
-    event.target.value = '';
+    const url = await uploadPublicMedia(appData.currentUserId, file);
+    setDraft((current) => ({ ...current, coverImage: url }));
   }
 
-  function handleAvatarFile(event: ChangeEvent<HTMLInputElement>) {
+  async function handleAvatarFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setProfileDraft((current) => ({ ...current, avatarImage: reader.result as string }));
-      }
-    };
-    reader.readAsDataURL(file);
-    event.target.value = '';
+    const url = await uploadPublicMedia(appData.currentUserId, file);
+    setProfileDraft((current) => ({ ...current, avatarImage: url }));
   }
 
-  function rateList(listId: string, ownerId: string | undefined, score: number) {
-    if (ownerId === data.currentUserId) {
-      return;
-    }
-
-    setData((current) => {
-      const ratings = current.ratings.filter(
-        (rating) => !(rating.listId === listId && rating.userId === current.currentUserId),
-      );
-
-      const nextRating: Rating = {
-        id: crypto.randomUUID(),
-        listId,
-        userId: current.currentUserId,
-        score,
-        createdAt: new Date().toISOString(),
-      };
-
-      return {
-        ...current,
-        ratings: [...ratings, nextRating],
-      };
-    });
+  async function rateList(listId: string, ownerId: string | undefined, score: number) {
+    await actions.rateList(listId, ownerId, score);
   }
 
-  function submitListForm(event: FormEvent<HTMLFormElement>) {
+  async function submitListForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!draft.title.trim() || !draft.location.trim() || draft.places.length === 0) {
       return;
     }
 
-    const nextCreatedListId = crypto.randomUUID();
     const editingListId = listFormMode === 'edit' ? selectedList?.id : undefined;
+    const preparedDraft: DraftList = { ...draft, coverImage: draft.coverImage.trim() || DEFAULT_COVER };
+    const resultId = await actions.saveList(listFormMode, editingListId, preparedDraft);
 
-    setData((current) => {
-      if (listFormMode === 'edit' && editingListId) {
-        return {
-          ...current,
-          lists: current.lists.map((list) =>
-            list.id === editingListId
-              ? {
-                  ...list,
-                  title: draft.title.trim(),
-                  coverImage: draft.coverImage.trim() || DEFAULT_COVER,
-                  location: draft.location.trim(),
-                  country: draft.country.trim() || 'Unknown',
-                  vibe: draft.vibe.trim() || 'custom route',
-                  description: draft.description.trim() || 'A new list from the community.',
-                  places: draft.places,
-                  days: draft.days,
-                  season: draft.season,
-                  budget: draft.budget,
-                }
-              : list,
-          ),
-        };
-      }
-
-      const nextList: TripList = {
-        id: nextCreatedListId,
-        ownerId: current.currentUserId,
-        title: draft.title.trim(),
-        coverImage: draft.coverImage.trim() || DEFAULT_COVER,
-        location: draft.location.trim(),
-        country: draft.country.trim() || 'Unknown',
-        vibe: draft.vibe.trim() || 'custom route',
-        description: draft.description.trim() || 'A new list from the community.',
-        places: draft.places,
-        days: draft.days,
-        season: draft.season,
-        budget: draft.budget,
-        createdAt: new Date().toISOString(),
-      };
-
-      return {
-        ...current,
-        lists: [nextList, ...current.lists],
-      };
-    });
-
-    if (listFormMode === 'create') {
-      setSelectedListId(nextCreatedListId);
-    } else if (editingListId) {
-      setSelectedListId(editingListId);
-    }
-
+    setSelectedListId(resultId);
     setComposerOpen(false);
     setDraft(emptyDraft);
   }
 
-  function saveProfile(event: FormEvent<HTMLFormElement>) {
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    setData((current) => ({
-      ...current,
-      users: current.users.map((user) =>
-        user.id === current.currentUserId
-          ? {
-              ...user,
-              name: profileDraft.name.trim() || user.name,
-              handle: profileDraft.handle.trim() || user.handle,
-              city: profileDraft.city.trim() || user.city,
-              bio: profileDraft.bio.trim() || user.bio,
-              avatar: profileDraft.avatar.trim() || user.avatar,
-              avatarImage: profileDraft.avatarImage.trim(),
-            }
-          : user,
-      ),
-    }));
+    await actions.saveProfile({
+      name: profileDraft.name.trim() || undefined,
+      handle: profileDraft.handle.trim() || undefined,
+      city: profileDraft.city.trim() || undefined,
+      bio: profileDraft.bio.trim() || undefined,
+      avatar: profileDraft.avatar.trim() || undefined,
+      avatarImageUrl: profileDraft.avatarImage.trim(),
+    });
     setProfileEditorOpen(false);
-  }
-
-  const stats = useMemo(() => {
-    if (!currentUser) {
-      return { followers: 0, following: 0, trips: 0, avgRating: 0 };
-    }
-
-    return getUserStats(currentUser.id, data);
-  }, [currentUser, data]);
-
-  if (!currentUser) {
-    return null;
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="auth-screen">
-        <section className="auth-screen__panel panel">
-          <div className="auth-screen__badge">EatMap</div>
-          <div className="auth-screen__copy">
-            <p className="eyebrow">Trip planning social map</p>
-            <h1>Sign in or create your account to continue.</h1>
-            <p>Use Google to get into your trip map, explore other travelers, and manage your own saved lists.</p>
-          </div>
-
-          <div className="auth-switcher">
-            <button className={`pill${authMode === 'login' ? ' pill--active' : ''}`} type="button" onClick={() => setAuthMode('login')}>
-              Log in
-            </button>
-            <button className={`pill${authMode === 'signup' ? ' pill--active' : ''}`} type="button" onClick={() => setAuthMode('signup')}>
-              Sign up
-            </button>
-          </div>
-
-          <div className="auth-screen__google">
-            <div ref={googleButtonRef} className="google-button-mount" />
-            {googleButtonError ? <p className="place-autocomplete__error">{googleButtonError}</p> : null}
-          </div>
-
-          <div className="auth-divider">
-            <span>or</span>
-          </div>
-
-          <form className="auth-local-form" onSubmit={createLocalAccount}>
-            <label>
-              <span>{authMode === 'login' ? 'Your name' : 'Choose a display name'}</span>
-              <input
-                value={localName}
-                onChange={(event) => setLocalName(event.target.value)}
-                placeholder="e.g. Jordan Rivera"
-                required
-              />
-            </label>
-            <button className="primary-button" type="submit">
-              Continue without Google
-            </button>
-            <p className="auth-local-form__hint">
-              No password needed — this creates a profile stored only in this browser.
-            </p>
-          </form>
-
-          <div className="auth-screen__demo">
-            <div className="section-heading">
-              <h3>Demo travelers</h3>
-              <span>or preview the app as a seeded traveler</span>
-            </div>
-            <div className="auth-demo-grid">
-              {data.users.map((user) => (
-                <button
-                  key={user.id}
-                  className={`demo-account${user.id === data.currentUserId ? ' demo-account--active' : ''}`}
-                  type="button"
-                  onClick={() => login(user.id)}
-                >
-                  <Avatar user={user} className="demo-account__avatar" />
-                  <span>
-                    <strong>{user.name}</strong>
-                    <small>{user.handle}</small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
-      </div>
-    );
   }
 
   const pageLabel = page === 'home' ? 'Map' : page === 'explore' ? 'Explore' : page === 'dm' ? 'Messages' : 'Account';
@@ -1536,7 +1220,8 @@ function AppShell() {
               places={listDetail.places}
               isOwner={listDetailOwner?.id === currentUser.id}
               attachments={listDetailOwner?.id === currentUser.id ? listDetail.placeAttachments ?? {} : null}
-              onSaveAttachment={(placeId, attachment) => updatePlaceAttachment(listDetail.id, placeId, attachment)}
+              currentUserId={data.currentUserId}
+              onSaveAttachment={(placeId, attachment) => updatePlaceAttachment(placeId, attachment)}
             />
 
             <SavedPlacesView key={`${listDetail.id}-places`} places={listDetail.places} />
@@ -1682,12 +1367,14 @@ function TripPlanView({
   places,
   isOwner,
   attachments,
+  currentUserId,
   onSaveAttachment,
 }: {
   days: TripDay[];
   places: Place[];
   isOwner: boolean;
   attachments: Record<string, PlaceAttachment> | null;
+  currentUserId: string;
   onSaveAttachment: (placeId: string, attachment: PlaceAttachment | null) => void;
 }) {
   const [viewMode, setViewMode] = useState<'cards' | 'timeline'>('cards');
@@ -1770,6 +1457,7 @@ function TripPlanView({
                           <TimelineAttachment
                             attachment={attachments?.[placeId]}
                             onSave={(value) => onSaveAttachment(placeId, value)}
+                            currentUserId={currentUserId}
                           />
                         ) : null}
                       </div>
@@ -1785,56 +1473,61 @@ function TripPlanView({
   );
 }
 
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result);
-      } else {
-        reject(new Error('Could not read file.'));
-      }
-    };
-    reader.onerror = () => reject(new Error('Could not read file.'));
-    reader.readAsDataURL(file);
-  });
-}
-
 function TimelineAttachment({
   attachment,
   onSave,
+  currentUserId,
 }: {
   attachment: PlaceAttachment | undefined;
   onSave: (attachment: PlaceAttachment | null) => void;
+  currentUserId: string;
 }) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState(attachment?.note ?? '');
   const [files, setFiles] = useState<AttachmentFile[]>(attachment?.files ?? []);
+  /** `files[].fileDataUrl` holds a storage PATH once a file is freshly uploaded (see
+   * `uploadAttachmentFile`) -- a path isn't directly renderable, so freshly-added files get a
+   * short-lived signed URL here for local preview. Files that came in via props (already saved)
+   * already have a signed URL in `fileDataUrl` from `fetchAllLists`, so they need no entry here. */
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     setNote(attachment?.note ?? '');
     setFiles(attachment?.files ?? []);
+    setPreviewUrls({});
   }, [attachment]);
 
   const hasContent = Boolean(attachment?.note?.trim() || attachment?.files?.length);
 
   async function handleFiles(event: ChangeEvent<HTMLInputElement>) {
     const selected = event.target.files;
+    event.target.value = '';
     if (!selected || selected.length === 0) {
       return;
     }
 
-    const added = await Promise.all(
-      Array.from(selected).map(async (file) => ({
-        id: crypto.randomUUID(),
-        fileName: file.name,
-        fileType: file.type,
-        fileDataUrl: await readFileAsDataUrl(file),
-      })),
-    );
+    setUploading(true);
+    try {
+      const added: AttachmentFile[] = [];
+      const newPreviews: Record<string, string> = {};
 
-    setFiles((current) => [...current, ...added]);
-    event.target.value = '';
+      for (const file of Array.from(selected)) {
+        const { path, previewUrl } = await uploadAttachmentFile(currentUserId, file);
+        const id = crypto.randomUUID();
+        added.push({ id, fileName: file.name, fileType: file.type, fileDataUrl: path });
+        newPreviews[id] = previewUrl;
+      }
+
+      setFiles((current) => [...current, ...added]);
+      setPreviewUrls((current) => ({ ...current, ...newPreviews }));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function previewFor(file: AttachmentFile) {
+    return previewUrls[file.id] ?? file.fileDataUrl;
   }
 
   function removeFile(id: string) {
@@ -1874,14 +1567,14 @@ function TimelineAttachment({
           ? files.map((file) => (
               <a
                 key={file.id}
-                href={file.fileDataUrl}
+                href={previewFor(file)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="timeline-attachment__minichip"
                 title={`Open ${file.fileName}`}
               >
                 {file.fileType.startsWith('image/') ? (
-                  <img src={file.fileDataUrl} alt={file.fileName} className="timeline-attachment__minithumb" />
+                  <img src={previewFor(file)} alt={file.fileName} className="timeline-attachment__minithumb" />
                 ) : (
                   <span className="timeline-attachment__minidoc" aria-hidden="true">
                     📄
@@ -1908,14 +1601,14 @@ function TimelineAttachment({
               {files.map((file) => (
                 <div key={file.id} className="timeline-attachment__file">
                   <a
-                    href={file.fileDataUrl}
+                    href={previewFor(file)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="timeline-attachment__file-link"
                     title={`Open ${file.fileName}`}
                   >
                     {file.fileType.startsWith('image/') ? (
-                      <img src={file.fileDataUrl} alt={file.fileName} className="timeline-attachment__thumb" />
+                      <img src={previewFor(file)} alt={file.fileName} className="timeline-attachment__thumb" />
                     ) : (
                       <span className="timeline-attachment__filechip">📄 {file.fileName}</span>
                     )}
@@ -1933,8 +1626,8 @@ function TimelineAttachment({
             </div>
           ) : null}
           <label className="secondary-button timeline-attachment__upload">
-            Attach image or PDF
-            <input type="file" accept="image/*,application/pdf" multiple onChange={handleFiles} hidden />
+            {uploading ? 'Uploading…' : 'Attach image or PDF'}
+            <input type="file" accept="image/*,application/pdf" multiple onChange={handleFiles} disabled={uploading} hidden />
           </label>
           <div className="timeline-attachment__actions">
             <button type="button" className="secondary-button" onClick={cancel}>
