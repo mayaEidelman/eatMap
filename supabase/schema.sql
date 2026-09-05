@@ -88,8 +88,16 @@ create table if not exists public.lists (
   description text not null default '',
   season text not null default 'summer' check (season in ('spring', 'summer', 'autumn', 'winter')),
   budget text not null default 'mid-range' check (budget in ('low', 'mid-range', 'high', 'mixed')),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  color text,
+  start_date date,
+  end_date date
 );
+
+-- Safe to re-run against a database that already has this table from before these columns existed.
+alter table public.lists add column if not exists color text;
+alter table public.lists add column if not exists start_date date;
+alter table public.lists add column if not exists end_date date;
 
 create index if not exists lists_owner_id_idx on public.lists (owner_id);
 
@@ -101,8 +109,12 @@ create table if not exists public.places (
   lat double precision not null,
   lng double precision not null,
   category text not null default 'other'
-    check (category in ('food', 'attraction', 'hotel', 'cafe', 'shopping', 'nature', 'nightlife', 'other'))
+    check (category in ('food', 'attraction', 'hotel', 'cafe', 'shopping', 'nature', 'nightlife', 'other')),
+  google_place_id text
 );
+
+-- Safe to re-run against a database that already has this table from before this column existed.
+alter table public.places add column if not exists google_place_id text;
 
 create index if not exists places_list_id_idx on public.places (list_id);
 

@@ -366,14 +366,17 @@ button {
 }
 
 .account-list-sidebar__item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.78);
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.account-list-sidebar__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .account-list-sidebar__hit {
@@ -426,6 +429,40 @@ button {
 .account-list-sidebar__item--active {
   border-color: rgba(37, 99, 235, 0.32);
   background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(249, 115, 22, 0.08));
+}
+
+.sidebar-timeline {
+  display: grid;
+  gap: 10px;
+  padding: 10px 6px 4px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+
+.sidebar-timeline__days {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sidebar-timeline__activities {
+  display: grid;
+  gap: 8px;
+}
+
+.sidebar-timeline__activity {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.sidebar-timeline__activity strong,
+.sidebar-timeline__activity small {
+  display: block;
+}
+
+.sidebar-timeline__activity small {
+  color: var(--muted);
 }
 
 .sidebar__empty {
@@ -729,6 +766,11 @@ button.stat-pill {
   font-weight: 700;
 }
 
+.icon-button--active {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(249, 115, 22, 0.14));
+  border-color: rgba(37, 99, 235, 0.32);
+}
+
 .primary-button {
   border: 0;
   color: white;
@@ -748,6 +790,31 @@ button.stat-pill {
 .sidebar__section {
   display: grid;
   gap: 12px;
+}
+
+.map-quick-add__result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.map-quick-add__result strong {
+  display: block;
+}
+
+.map-quick-add__result small {
+  color: #64748b;
+}
+
+.map-quick-add__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .section-heading,
@@ -942,6 +1009,31 @@ button.stat-pill {
   border-bottom: 1px solid rgba(15, 23, 42, 0.06);
 }
 
+.place-list__item--clickable {
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.place-list__item--clickable:hover {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.place-preview-modal {
+  max-width: 420px;
+  display: grid;
+  gap: 10px;
+}
+
+.place-preview-modal__photos {
+  margin: -4px -4px 4px;
+}
+
 .place-dot {
   width: 10px;
   height: 10px;
@@ -1026,11 +1118,105 @@ button.stat-pill {
 .map-popup {
   display: grid;
   gap: 4px;
+  max-width: 220px;
 }
 
 .map-popup p {
   margin: 4px 0 0;
   color: var(--muted);
+}
+
+.map-popup--preview {
+  gap: 6px;
+}
+
+.map-popup__photos {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  margin-bottom: 2px;
+}
+
+.map-popup__photo {
+  width: 100px;
+  height: 80px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.map-popup__photos .map-popup__photo:only-child {
+  width: 100%;
+  height: 110px;
+}
+
+.map-popup__links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.map-popup__links a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.map-popup__links a:hover {
+  text-decoration: underline;
+}
+
+.map-popup__links span {
+  color: var(--muted);
+}
+
+.map-popup__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.map-popup__stars {
+  color: #f59e0b;
+  letter-spacing: -1px;
+}
+
+.map-popup__open-badge {
+  display: inline-block;
+  width: fit-content;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.map-popup__open-badge--open {
+  background: rgba(22, 163, 74, 0.15);
+  color: #15803d;
+}
+
+.map-popup__open-badge--closed {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+}
+
+.map-popup__save-button {
+  margin-top: 4px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: none;
+  background: #111827;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.map-popup__save-button:hover {
+  background: #1f2937;
 }
 
 @media (max-width: 1240px) {
@@ -1129,6 +1315,30 @@ button.stat-pill {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+.color-picker {
+  display: grid;
+  gap: 10px;
+}
+
+.color-picker__swatches {
+  display: flex;
+  gap: 10px;
+}
+
+.color-picker__swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.color-picker__swatch--active {
+  border-color: #111827;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #111827;
+}
+
 .cover-field {
   display: grid;
   gap: 10px;
@@ -1544,6 +1754,18 @@ button.stat-pill {
 .trip-plan-editor {
   display: grid;
   gap: 14px;
+}
+
+.trip-dates {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.trip-dates label {
+  display: grid;
+  gap: 4px;
 }
 
 .trip-plan-days {

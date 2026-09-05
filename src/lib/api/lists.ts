@@ -83,6 +83,7 @@ async function savePlacesAndDays(listId: string, places: DraftPlace[], days: Dra
         lat: place.lat,
         lng: place.lng,
         category: place.category,
+        google_place_id: place.googlePlaceId ?? null,
       })),
     );
     if (error) throw error;
@@ -130,6 +131,9 @@ export async function createList(ownerId: string, draft: DraftList): Promise<str
     description: draft.description || 'A new list from the community.',
     season: draft.season,
     budget: draft.budget,
+    color: draft.color || null,
+    start_date: draft.startDate || null,
+    end_date: draft.endDate || null,
   });
   if (error) throw error;
 
@@ -149,6 +153,9 @@ export async function updateList(listId: string, draft: DraftList): Promise<void
       description: draft.description || 'A new list from the community.',
       season: draft.season,
       budget: draft.budget,
+      color: draft.color || null,
+      start_date: draft.startDate || null,
+      end_date: draft.endDate || null,
     })
     .eq('id', listId);
   if (error) throw error;

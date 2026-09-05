@@ -1,12 +1,14 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { ImportPlacesModal } from './components/ImportPlacesModal';
 import { MapPanel } from './components/MapPanel';
-import { PlaceAutocomplete } from './components/PlaceAutocomplete';
+import { PlaceAutocomplete, type PlaceSearchResult } from './components/PlaceAutocomplete';
 import { CATEGORY_META, groupPlacesByCategory } from './lib/categories';
 import { useAppActions } from './hooks/useAppActions';
 import { useAppData } from './hooks/useAppData';
 import { useAuthSession } from './hooks/useAuthSession';
 import { useMessages } from './hooks/useMessages';
+import { defaultColorForIndex, LIST_MARKER_COLORS } from './lib/mapColors';
+import { fetchPlaceDetails, type PlaceDetails } from './lib/placeDetails';
 import { signInWithGoogle, signInWithMagicLink, signOut as signOutOfSupabase } from './lib/supabaseAuth';
 import { isSupabaseConfigured, supabaseConfigError } from './lib/supabaseClient';
 import { uploadAttachmentFile, uploadPublicMedia } from './lib/storage';
@@ -15,6 +17,7 @@ import { PLACE_CATEGORIES } from './types';
 import type {
   AppData,
   AttachmentFile,
+  DraftDay,
   DraftList,
   DraftPlace,
   PageMode,
@@ -114,7 +117,39 @@ function buildListDraft(list?: TripList): DraftList {
     days: list.days.map((tripDay) => ({ ...tripDay, placeIds: [...tripDay.placeIds] })),
     season: list.season,
     budget: list.budget,
+    color: list.color,
+    startDate: list.startDate,
+    endDate: list.endDate,
   };
+}
+
+const MAX_GENERATED_DAYS = 60;
+
+/** Builds one DraftDay per calendar day in [startDate, endDate], labeled with its date. Dates
+ * are parsed as local midnight (not UTC) so the generated label always matches the date the
+ * user actually picked, regardless of timezone. */
+function buildDaysFromDateRange(startDate: string, endDate: string): DraftDay[] {
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+    return [];
+  }
+
+  const days: DraftDay[] = [];
+  const cursor = new Date(start);
+  let index = 1;
+
+  while (cursor <= end && days.length < MAX_GENERATED_DAYS) {
+    days.push({
+      id: crypto.randomUUID(),
+      label: `Day ${index} · ${cursor.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}`,
+      placeIds: [],
+    });
+    cursor.setDate(cursor.getDate() + 1);
+    index += 1;
+  }
+
+  return days;
 }
 
 function filterByQuery(lists: TripList[], query: string) {
@@ -153,8 +188,17 @@ function AppShell() {
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [listFormMode, setListFormMode] = useState<'create' | 'edit'>('create');
   const [draft, setDraft] = useState<DraftList>(emptyDraft);
+  const [listFormError, setListFormError] = useState<string | null>(null);
+  const [listFormSubmitting, setListFormSubmitting] = useState(false);
   const [profileDraft, setProfileDraft] = useState<ProfileDraft>(EMPTY_PROFILE_DRAFT);
   const [importPlacesOpen, setImportPlacesOpen] = useState(false);
+  const [mapSearchPlace, setMapSearchPlace] = useState<PlaceSearchResult | null>(null);
+  const [saveToListOpen, setSaveToListOpen] = useState(false);
+  const [saveToListError, setSaveToListError] = useState<string | null>(null);
+  const [saveToListSubmitting, setSaveToListSubmitting] = useState(false);
+  const [inspectedPlaceId, setInspectedPlaceId] = useState<string | null>(null);
+  const [openTimelineListIds, setOpenTimelineListIds] = useState<Set<string>>(new Set());
+  const [selectedDayByListId, setSelectedDayByListId] = useState<Record<string, string | null>>({});
 
   const currentUser = data ? data.users.find((user) => user.id === data.currentUserId) : undefined;
   const selectedList = data ? data.lists.find((list) => list.id === selectedListId) ?? data.lists[0] : undefined;
@@ -275,10 +319,30 @@ function AppShell() {
     );
   }, [accountLists, savedLists, search]);
 
+  // When a list's sidebar timeline is open and a specific day is picked, the map should only
+  // show that day's places; closed (or open with no day picked, i.e. "all days") shows everything.
+  const mapDisplayLists = useMemo(() => {
+    return myMapLists.map((list) => {
+      if (!openTimelineListIds.has(list.id)) {
+        return list;
+      }
+
+      const selectedDayId = selectedDayByListId[list.id];
+      const day = selectedDayId ? list.days.find((tripDay) => tripDay.id === selectedDayId) : undefined;
+      if (!day) {
+        return list;
+      }
+
+      const dayPlaceIds = new Set(day.placeIds);
+      return { ...list, places: list.places.filter((place) => dayPlaceIds.has(place.id)) };
+    });
+  }, [myMapLists, openTimelineListIds, selectedDayByListId]);
+
   const peopleToFollow = useMemo(() => (data ? data.users.filter((user) => user.id !== data.currentUserId) : []), [data]);
 
   const listDetail = data ? data.lists.find((list) => list.id === listDetailId) ?? null : null;
   const listDetailOwner = data && listDetail ? data.users.find((user) => user.id === listDetail.ownerId) : undefined;
+  const inspectedPlace = listDetail?.places.find((place) => place.id === inspectedPlaceId) ?? null;
 
   const viewedProfile = data ? data.users.find((user) => user.id === viewedProfileId) ?? null : null;
   const viewedProfileStats = data && viewedProfile ? getUserStats(viewedProfile.id, data) : null;
@@ -456,7 +520,8 @@ function AppShell() {
 
   function openCreateList() {
     setListFormMode('create');
-    setDraft(emptyDraft);
+    setDraft({ ...emptyDraft, color: defaultColorForIndex(accountLists.length) });
+    setListFormError(null);
     setComposerOpen(true);
   }
 
@@ -470,11 +535,68 @@ function AppShell() {
     setDraft(buildListDraft(list));
     setSelectedListId(list.id);
     setListDetailId(null);
+    setListFormError(null);
+    setComposerOpen(true);
+  }
+
+  function handleMapPlaceFound(place: PlaceSearchResult) {
+    setMapSearchPlace(place);
+    setSaveToListOpen(false);
+    setSaveToListError(null);
+  }
+
+  function discardMapSearchPlace() {
+    setMapSearchPlace(null);
+    setSaveToListOpen(false);
+    setSaveToListError(null);
+  }
+
+  async function addPlaceToExistingList(list: TripList) {
+    if (!mapSearchPlace) {
+      return;
+    }
+
+    setSaveToListSubmitting(true);
+    setSaveToListError(null);
+    try {
+      const updatedDraft: DraftList = { ...buildListDraft(list), places: [...list.places, mapSearchPlace] };
+      await actions.saveList('edit', list.id, updatedDraft);
+      setMapSearchPlace(null);
+      setSaveToListOpen(false);
+    } catch (error) {
+      setSaveToListError(error instanceof Error ? error.message : 'Could not add this place. Please try again.');
+    } finally {
+      setSaveToListSubmitting(false);
+    }
+  }
+
+  function startNewListWithMapPlace() {
+    if (!mapSearchPlace) {
+      return;
+    }
+
+    setListFormMode('create');
+    setDraft({ ...emptyDraft, places: [mapSearchPlace], color: defaultColorForIndex(accountLists.length) });
+    setListFormError(null);
+    setMapSearchPlace(null);
+    setSaveToListOpen(false);
     setComposerOpen(true);
   }
 
   function openListDetail(listId: string) {
     setListDetailId(listId);
+  }
+
+  function toggleListTimeline(listId: string) {
+    setOpenTimelineListIds((current) => {
+      const next = new Set(current);
+      if (next.has(listId)) {
+        next.delete(listId);
+      } else {
+        next.add(listId);
+      }
+      return next;
+    });
   }
 
   function showListOnMap(listId: string) {
@@ -525,14 +647,26 @@ function AppShell() {
 
   async function submitListForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setListFormError(null);
 
-    if (!draft.title.trim() || !draft.location.trim() || draft.places.length === 0) {
+    if (!draft.title.trim() || !draft.location.trim()) {
+      setListFormError('Title and city are required.');
       return;
     }
 
     const editingListId = listFormMode === 'edit' ? selectedList?.id : undefined;
     const preparedDraft: DraftList = { ...draft, coverImage: draft.coverImage.trim() || DEFAULT_COVER };
-    const resultId = await actions.saveList(listFormMode, editingListId, preparedDraft);
+
+    setListFormSubmitting(true);
+    let resultId: string;
+    try {
+      resultId = await actions.saveList(listFormMode, editingListId, preparedDraft);
+    } catch (error) {
+      setListFormError(error instanceof Error ? error.message : 'Could not save this list. Please try again.');
+      return;
+    } finally {
+      setListFormSubmitting(false);
+    }
 
     setSelectedListId(resultId);
     setComposerOpen(false);
@@ -598,6 +732,16 @@ function AppShell() {
                 </button>
               </div>
 
+              <div className="sidebar__section map-quick-add">
+                <div className="section-heading">
+                  <h3>Add a place</h3>
+                </div>
+                <PlaceAutocomplete onAdd={handleMapPlaceFound} />
+                <small className="draft-places__empty">
+                  {mapSearchPlace ? 'See details and Save on the pin below.' : 'Search to drop a pin on the map.'}
+                </small>
+              </div>
+
               <div className="sidebar__section">
                 <div className="section-heading">
                   <h3>My lists</h3>
@@ -612,6 +756,10 @@ function AppShell() {
                         active={list.id === selectedListId}
                         onSelect={() => setSelectedListId(list.id)}
                         onView={() => openListDetail(list.id)}
+                        timelineOpen={openTimelineListIds.has(list.id)}
+                        onToggleTimeline={() => toggleListTimeline(list.id)}
+                        selectedDayId={selectedDayByListId[list.id] ?? null}
+                        onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
                       />
                     ))
                   ) : (
@@ -634,6 +782,10 @@ function AppShell() {
                         active={list.id === selectedListId}
                         onSelect={() => setSelectedListId(list.id)}
                         onView={() => openListDetail(list.id)}
+                        timelineOpen={openTimelineListIds.has(list.id)}
+                        onToggleTimeline={() => toggleListTimeline(list.id)}
+                        selectedDayId={selectedDayByListId[list.id] ?? null}
+                        onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
                       />
                     ))
                   ) : (
@@ -649,9 +801,13 @@ function AppShell() {
           )}
 
           <MapPanel
-            lists={myMapLists}
+            lists={mapDisplayLists}
             selectedListId={selectedList?.id ?? myMapLists[0]?.id ?? ''}
             onSelectList={setSelectedListId}
+            previewPlace={mapSearchPlace}
+            onSavePreviewPlace={() => setSaveToListOpen(true)}
+            onDismissPreviewPlace={discardMapSearchPlace}
+            onDiscoverPlace={handleMapPlaceFound}
           />
         </div>
       ) : null}
@@ -828,6 +984,23 @@ function AppShell() {
                 <input value={draft.vibe} onChange={(event) => setDraft((current) => ({ ...current, vibe: event.target.value }))} />
               </label>
 
+              <div className="form-grid__full color-picker">
+                <span>Map color</span>
+                <div className="color-picker__swatches">
+                  {LIST_MARKER_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      className={`color-picker__swatch${draft.color === color ? ' color-picker__swatch--active' : ''}`}
+                      style={{ background: color }}
+                      onClick={() => setDraft((current) => ({ ...current, color }))}
+                      aria-label={`Use ${color} for this list's map markers`}
+                      aria-pressed={draft.color === color}
+                    />
+                  ))}
+                </div>
+              </div>
+
               <label className="form-grid__full cover-field">
                 <span>Cover image</span>
                 <div className="cover-field__row">
@@ -896,6 +1069,44 @@ function AppShell() {
                     + Add day
                   </button>
                 </div>
+
+                <div className="trip-dates">
+                  <label>
+                    <span>Start date</span>
+                    <input
+                      type="date"
+                      value={draft.startDate ?? ''}
+                      onChange={(event) => setDraft((current) => ({ ...current, startDate: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    <span>End date</span>
+                    <input
+                      type="date"
+                      value={draft.endDate ?? ''}
+                      min={draft.startDate}
+                      onChange={(event) => setDraft((current) => ({ ...current, endDate: event.target.value }))}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={!draft.startDate || !draft.endDate}
+                    onClick={() =>
+                      setDraft((current) => ({
+                        ...current,
+                        days: buildDaysFromDateRange(current.startDate ?? '', current.endDate ?? ''),
+                      }))
+                    }
+                  >
+                    Generate days from dates
+                  </button>
+                </div>
+                {draft.days.length > 0 && draft.startDate && draft.endDate ? (
+                  <small className="draft-places__empty">
+                    Generating replaces the current day list below -- drag places back in after.
+                  </small>
+                ) : null}
 
                 <div className="trip-plan-days">
                   {draft.days.map((tripDay) => (
@@ -1047,12 +1258,13 @@ function AppShell() {
                   <option value="mixed">mixed</option>
                 </select>
               </label>
+              {listFormError ? <p className="form-grid__full place-autocomplete__error">{listFormError}</p> : null}
               <div className="form-grid__full modal-actions">
-                <button className="secondary-button" type="button" onClick={() => setComposerOpen(false)}>
+                <button className="secondary-button" type="button" onClick={() => setComposerOpen(false)} disabled={listFormSubmitting}>
                   Cancel
                 </button>
-                <button className="primary-button" type="submit">
-                  {listFormMode === 'create' ? 'Publish list' : 'Save changes'}
+                <button className="primary-button" type="submit" disabled={listFormSubmitting}>
+                  {listFormSubmitting ? 'Saving…' : listFormMode === 'create' ? 'Publish list' : 'Save changes'}
                 </button>
               </div>
             </form>
@@ -1062,6 +1274,50 @@ function AppShell() {
 
       {importPlacesOpen ? (
         <ImportPlacesModal onClose={() => setImportPlacesOpen(false)} onImport={importDraftPlaces} />
+      ) : null}
+
+      {saveToListOpen && mapSearchPlace ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setSaveToListOpen(false)}>
+          <div className="modal panel" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="section-heading">
+              <h3>Save "{mapSearchPlace.name}" to a list</h3>
+              <button className="icon-button" type="button" onClick={() => setSaveToListOpen(false)}>
+                ×
+              </button>
+            </div>
+            <div className="account-list-sidebar">
+              {accountLists.map((list) => (
+                <button
+                  key={list.id}
+                  type="button"
+                  className="account-list-sidebar__hit"
+                  onClick={() => addPlaceToExistingList(list)}
+                  disabled={saveToListSubmitting}
+                >
+                  <img src={list.coverImage} alt="" className="account-list-sidebar__thumb" />
+                  <div>
+                    <strong>{list.title}</strong>
+                    <span>
+                      {list.location}, {list.country}
+                    </span>
+                  </div>
+                </button>
+              ))}
+              {accountLists.length === 0 ? <p className="sidebar__empty">You don't have any lists yet.</p> : null}
+            </div>
+            {saveToListError ? <p className="place-autocomplete__error">{saveToListError}</p> : null}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={startNewListWithMapPlace}
+                disabled={saveToListSubmitting}
+              >
+                + New list with this place
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {profileEditorOpen ? (
@@ -1154,7 +1410,6 @@ function AppShell() {
             <div className="list-detail-modal__hero" style={{ backgroundImage: `url(${listDetail.coverImage})` }}>
               <span className="list-detail-modal__scrim" />
               <div>
-                <p className="eyebrow">{listDetail.location}, {listDetail.country}</p>
                 <h3>{listDetail.title}</h3>
               </div>
               <div className="account-list-modal__score">
@@ -1175,12 +1430,6 @@ function AppShell() {
             </div>
 
             <p className="detail-panel__description">{listDetail.description}</p>
-
-            <div className="detail-meta">
-              <span className="chip">{listDetail.vibe}</span>
-              <span className="chip chip--soft">{listDetail.season}</span>
-              <span className="chip chip--soft">{listDetail.budget}</span>
-            </div>
 
             <div className="owner-card">
               <button
@@ -1224,7 +1473,7 @@ function AppShell() {
               onSaveAttachment={(placeId, attachment) => updatePlaceAttachment(placeId, attachment)}
             />
 
-            <SavedPlacesView key={`${listDetail.id}-places`} places={listDetail.places} />
+            <SavedPlacesView key={`${listDetail.id}-places`} places={listDetail.places} onSelectPlace={setInspectedPlaceId} />
 
             {listDetailOwner?.id !== currentUser.id ? (
               <div className="rating-panel">
@@ -1256,6 +1505,8 @@ function AppShell() {
           </div>
         </div>
       ) : null}
+
+      {inspectedPlace ? <PlacePreviewModal place={inspectedPlace} onClose={() => setInspectedPlaceId(null)} /> : null}
 
       {peopleListOpen ? (
         <div className="modal-backdrop" role="presentation" onClick={() => setPeopleListOpen(null)}>
@@ -1643,7 +1894,102 @@ function TimelineAttachment({
   );
 }
 
-function SavedPlacesView({ places }: { places: Place[] }) {
+function starGlyphs(rating: number): string {
+  const rounded = Math.round(rating);
+  return '★'.repeat(rounded) + '☆'.repeat(Math.max(0, 5 - rounded));
+}
+
+/** The same rich card the map shows for a place -- photos, rating, hours, links -- but as a
+ * plain modal, since this opens from the list-detail view, not from a live map instance. */
+function PlacePreviewModal({ place, onClose }: { place: Place; onClose: () => void }) {
+  const [details, setDetails] = useState<PlaceDetails | null>(null);
+  const [loading, setLoading] = useState(Boolean(place.googlePlaceId));
+
+  useEffect(() => {
+    let cancelled = false;
+    setDetails(null);
+
+    if (!place.googlePlaceId) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    fetchPlaceDetails(place.googlePlaceId).then((result) => {
+      if (!cancelled) {
+        setDetails(result);
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [place.googlePlaceId]);
+
+  const hasLinks = Boolean(details?.mapsUrl || details?.website || details?.phone);
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <div className="modal panel place-preview-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <button className="icon-button list-detail-modal__close" type="button" onClick={onClose} aria-label="Close">
+          ×
+        </button>
+
+        {details?.photoUrls && details.photoUrls.length > 0 ? (
+          <div className="map-popup__photos place-preview-modal__photos">
+            {details.photoUrls.map((url) => (
+              <img key={url} src={url} alt="" className="map-popup__photo" />
+            ))}
+          </div>
+        ) : null}
+
+        <h3>
+          <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span> {place.name}
+        </h3>
+
+        {details?.rating ? (
+          <div className="map-popup__meta">
+            <span className="map-popup__stars">{starGlyphs(details.rating)}</span>
+            <span>
+              {details.rating.toFixed(1)}
+              {details.userRatingsTotal ? ` (${details.userRatingsTotal})` : ''}
+            </span>
+            {details.priceLevel ? <span>· {'$'.repeat(details.priceLevel)}</span> : null}
+          </div>
+        ) : null}
+
+        <p className="detail-panel__description">{place.address}</p>
+
+        {details?.openNow !== undefined ? (
+          <span className={`map-popup__open-badge ${details.openNow ? 'map-popup__open-badge--open' : 'map-popup__open-badge--closed'}`}>
+            {details.openNow ? 'Open now' : 'Closed now'}
+          </span>
+        ) : null}
+
+        {loading ? <p className="draft-places__empty">Loading details…</p> : null}
+
+        {hasLinks ? (
+          <div className="map-popup__links">
+            {details?.mapsUrl ? (
+              <a href={details.mapsUrl} target="_blank" rel="noopener noreferrer">
+                View on Google Maps
+              </a>
+            ) : null}
+            {details?.website ? (
+              <a href={details.website} target="_blank" rel="noopener noreferrer">
+                Website
+              </a>
+            ) : null}
+            {details?.phone ? <a href={`tel:${details.phone}`}>{details.phone}</a> : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SavedPlacesView({ places, onSelectPlace }: { places: Place[]; onSelectPlace: (placeId: string) => void }) {
   const [collapsedCategories, setCollapsedCategories] = useState<Set<PlaceCategory>>(new Set());
 
   function toggleCategory(category: PlaceCategory) {
@@ -1678,13 +2024,18 @@ function SavedPlacesView({ places }: { places: Place[] }) {
             </button>
             {!collapsed
               ? group.places.map((place) => (
-                  <div key={place.id} className="place-list__item">
+                  <button
+                    key={place.id}
+                    type="button"
+                    className="place-list__item place-list__item--clickable"
+                    onClick={() => onSelectPlace(place.id)}
+                  >
                     <span className="place-dot" />
                     <div>
                       <strong>{place.name}</strong>
                       <small>{place.address}</small>
                     </div>
-                  </div>
+                  </button>
                 ))
               : null}
           </div>
@@ -1734,24 +2085,96 @@ function SidebarListItem({
   active,
   onSelect,
   onView,
+  timelineOpen,
+  onToggleTimeline,
+  selectedDayId,
+  onSelectDay,
 }: {
   list: TripList;
   active: boolean;
   onSelect: () => void;
   onView: () => void;
+  timelineOpen: boolean;
+  onToggleTimeline: () => void;
+  /** null = "All days" -- every place in the list, not just one day's. */
+  selectedDayId: string | null;
+  onSelectDay: (dayId: string | null) => void;
 }) {
+  const selectedDay = selectedDayId ? list.days.find((day) => day.id === selectedDayId) ?? null : null;
+  const activityPlaces = selectedDay
+    ? selectedDay.placeIds
+        .map((placeId) => list.places.find((place) => place.id === placeId))
+        .filter((place): place is Place => Boolean(place))
+    : list.places;
+
   return (
     <div className={`account-list-sidebar__item${active ? ' account-list-sidebar__item--active' : ''}`}>
-      <button className="account-list-sidebar__hit" type="button" onClick={onSelect}>
-        <img src={list.coverImage} alt="" className="account-list-sidebar__thumb" />
-        <div>
-          <strong>{list.title}</strong>
-          <span>{list.location}, {list.country}</span>
+      <div className="account-list-sidebar__row">
+        <button className="account-list-sidebar__hit" type="button" onClick={onSelect}>
+          <img src={list.coverImage} alt="" className="account-list-sidebar__thumb" />
+          <div>
+            <strong>{list.title}</strong>
+            <span>{list.location}, {list.country}</span>
+          </div>
+        </button>
+        <button
+          className={`icon-button${timelineOpen ? ' icon-button--active' : ''}`}
+          type="button"
+          onClick={onToggleTimeline}
+          aria-label={timelineOpen ? `Hide ${list.title} timeline` : `Show ${list.title} timeline`}
+          aria-expanded={timelineOpen}
+        >
+          🗓
+        </button>
+        <button className="icon-button" type="button" onClick={onView} aria-label={`View ${list.title} details`}>
+          ⓘ
+        </button>
+      </div>
+
+      {timelineOpen ? (
+        <div className="sidebar-timeline">
+          {list.days.length === 0 ? (
+            <p className="sidebar__empty">No trip days yet -- add days from Edit list.</p>
+          ) : (
+            <>
+              <div className="sidebar-timeline__days">
+                <button
+                  type="button"
+                  className={`pill${!selectedDay ? ' pill--active' : ''}`}
+                  onClick={() => onSelectDay(null)}
+                >
+                  All days
+                </button>
+                {list.days.map((day) => (
+                  <button
+                    key={day.id}
+                    type="button"
+                    className={`pill${selectedDay?.id === day.id ? ' pill--active' : ''}`}
+                    onClick={() => onSelectDay(day.id)}
+                  >
+                    {day.label}
+                  </button>
+                ))}
+              </div>
+              <div className="sidebar-timeline__activities">
+                {activityPlaces.length > 0 ? (
+                  activityPlaces.map((place) => (
+                    <div key={place.id} className="sidebar-timeline__activity">
+                      <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span>
+                      <div>
+                        <strong>{place.name}</strong>
+                        <small>{place.address}</small>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="sidebar__empty">No stops planned for this day.</p>
+                )}
+              </div>
+            </>
+          )}
         </div>
-      </button>
-      <button className="icon-button" type="button" onClick={onView} aria-label={`View ${list.title} details`}>
-        ⓘ
-      </button>
+      ) : null}
     </div>
   );
 }

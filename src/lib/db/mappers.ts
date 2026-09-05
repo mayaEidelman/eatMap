@@ -28,6 +28,9 @@ export type ListRow = {
   season: string;
   budget: string;
   created_at: string;
+  color: string | null;
+  start_date: string | null;
+  end_date: string | null;
 };
 
 export type PlaceRow = {
@@ -38,6 +41,7 @@ export type PlaceRow = {
   lat: number;
   lng: number;
   category: string;
+  google_place_id: string | null;
 };
 
 export type TripDayRow = {
@@ -119,6 +123,7 @@ export function mapPlaceRow(row: PlaceRow): Place {
     lat: row.lat,
     lng: row.lng,
     category: row.category as PlaceCategory,
+    googlePlaceId: row.google_place_id ?? undefined,
   };
 }
 
@@ -171,6 +176,9 @@ export function composeTripList(
     season: listRow.season,
     budget: listRow.budget,
     createdAt: listRow.created_at,
+    color: listRow.color ?? undefined,
+    startDate: listRow.start_date ?? undefined,
+    endDate: listRow.end_date ?? undefined,
     placeAttachments,
   };
 }

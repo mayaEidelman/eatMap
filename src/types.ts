@@ -22,6 +22,10 @@ export type Place = {
   lat: number;
   lng: number;
   category: PlaceCategory;
+  /** Google's place_id, when this place came from the map search box -- lets the map re-fetch
+   * rich Google details (photos, rating, hours) on click instead of just the bare pin info.
+   * Absent for places added via CSV/paste import, which have no Google place behind them. */
+  googlePlaceId?: string;
 };
 
 export type TripDay = {
@@ -57,6 +61,13 @@ export type TripList = {
   season: string;
   budget: string;
   createdAt: string;
+  /** Hex color for this list's markers on the map. Falls back to a palette color derived from
+   * list position (see `lib/mapColors.ts`) when unset, for lists saved before this existed. */
+  color?: string;
+  /** ISO 'YYYY-MM-DD' dates. When both are set, the trip-plan editor can generate `days` to
+   * match the range instead of adding them one at a time. */
+  startDate?: string;
+  endDate?: string;
   /** Private attachments per place (booking notes, tickets, confirmations). Visible only to the list owner. */
   placeAttachments?: Record<string, PlaceAttachment>;
 };
@@ -109,6 +120,9 @@ export type DraftList = {
   days: DraftDay[];
   season: string;
   budget: string;
+  color?: string;
+  startDate?: string;
+  endDate?: string;
 };
 
 export type ProfileDraft = {

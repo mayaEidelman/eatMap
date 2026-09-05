@@ -3,8 +3,24 @@ import { guessCategoryFromTypes } from '../lib/categories';
 import { loadGoogleMaps } from '../lib/googleMaps';
 import type { DraftPlace } from '../types';
 
+/** A place straight from Google's Autocomplete, before it's ever saved anywhere. The extra
+ * fields here are display-only -- `savePlacesAndDays` only ever persists the plain `DraftPlace`
+ * columns, so nothing here needs a database column of its own. */
+export type PlaceSearchResult = DraftPlace & {
+  rating?: number;
+  userRatingsTotal?: number;
+  priceLevel?: number;
+  openNow?: boolean;
+  photoUrls?: string[];
+  /** Google's own page for this place -- the honest way to surface reservations/menus, since
+   * neither is a field the public Places API actually exposes (see PlaceAutocomplete usage). */
+  mapsUrl?: string;
+  website?: string;
+  phone?: string;
+};
+
 type PlaceAutocompleteProps = {
-  onAdd: (place: DraftPlace) => void;
+  onAdd: (place: PlaceSearchResult) => void;
 };
 
 export function PlaceAutocomplete({ onAdd }: PlaceAutocompleteProps) {
@@ -22,7 +38,21 @@ export function PlaceAutocomplete({ onAdd }: PlaceAutocompleteProps) {
         }
 
         const autocomplete = new googleApi.maps.places.Autocomplete(inputRef.current, {
-          fields: ['name', 'formatted_address', 'geometry', 'types'],
+          fields: [
+            'name',
+            'formatted_address',
+            'geometry',
+            'types',
+            'photos',
+            'rating',
+            'user_ratings_total',
+            'price_level',
+            'opening_hours',
+            'url',
+            'website',
+            'formatted_phone_number',
+            'place_id',
+          ],
         });
 
         autocomplete.addListener('place_changed', () => {
@@ -39,6 +69,15 @@ export function PlaceAutocomplete({ onAdd }: PlaceAutocompleteProps) {
             lat: location.lat(),
             lng: location.lng(),
             category: guessCategoryFromTypes(place.types),
+            rating: place.rating,
+            userRatingsTotal: place.user_ratings_total,
+            priceLevel: place.price_level,
+            openNow: place.opening_hours?.open_now,
+            photoUrls: place.photos?.slice(0, 4).map((photo) => photo.getUrl({ maxWidth: 400, maxHeight: 300 })),
+            mapsUrl: place.url,
+            website: place.website,
+            phone: place.formatted_phone_number,
+            googlePlaceId: place.place_id,
           });
 
           if (inputRef.current) {
