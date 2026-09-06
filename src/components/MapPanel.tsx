@@ -13,6 +13,9 @@ type MapPanelProps = {
   /** A place the user just searched for but hasn't saved to a list yet -- shown as a
    * distinct marker so search feels immediate, the way Google Maps itself drops a pin. */
   previewPlace?: PlaceSearchResult | null;
+  /** Whether `previewPlace` already exists in one of the current user's own lists -- drives
+   * the save icon's filled/outline state in the preview pin's info window. */
+  previewPlaceSaved?: boolean;
   /** Fired when the Save button inside the preview pin's info window is clicked. */
   onSavePreviewPlace?: () => void;
   /** Fired when the preview pin's info window is closed (its own × button). */
@@ -69,7 +72,7 @@ type PlaceCardDetails = {
 
 /** Shared by both the "just searched" preview pin and a click on an already-saved pin, so the
  * two look identical whenever the same Google data is available for both. */
-function buildPlaceCardHtml(details: PlaceCardDetails, saveButtonId?: string): string {
+function buildPlaceCardHtml(details: PlaceCardDetails, saveButtonId?: string, saved?: boolean): string {
   const photoHtml =
     details.photoUrls && details.photoUrls.length > 0
       ? `<div class="map-popup__photos">
@@ -109,20 +112,41 @@ function buildPlaceCardHtml(details: PlaceCardDetails, saveButtonId?: string): s
   }
   const linksHtml = links.length > 0 ? `<div class="map-popup__links">${links.join('<span>·</span>')}</div>` : '';
 
+  // A bookmark icon like Google Maps' own save button -- outlined when this place hasn't been
+  // saved to any of your lists yet, filled solid once it has.
   const saveButtonHtml = saveButtonId
-    ? `<button type="button" id="${saveButtonId}" class="map-popup__save-button">Save to a list</button>`
+    ? `<button
+        type="button"
+        id="${saveButtonId}"
+        class="map-popup__save-icon${saved ? ' map-popup__save-icon--active' : ''}"
+        aria-label="${saved ? 'Already saved to a list' : 'Save to a list'}"
+        aria-pressed="${saved ? 'true' : 'false'}"
+        title="${saved ? 'Already saved to a list' : 'Save to a list'}"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path
+            d="M6 3a2 2 0 0 0-2 2v16l8-5 8 5V5a2 2 0 0 0-2-2H6z"
+            fill="${saved ? 'currentColor' : 'none'}"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>`
     : '';
 
   return `
     <div class="map-popup map-popup--preview">
       ${photoHtml}
-      <strong>${escapeHtml(details.name)}</strong>
+      <div class="map-popup__header">
+        <strong>${escapeHtml(details.name)}</strong>
+        ${saveButtonHtml}
+      </div>
       ${subtitleHtml}
       ${ratingHtml}
       <p>${escapeHtml(details.address)}</p>
       ${openNowHtml}
       ${linksHtml}
-      ${saveButtonHtml}
     </div>
   `;
 }
@@ -143,6 +167,7 @@ export function MapPanel({
   selectedListId,
   onSelectList,
   previewPlace,
+  previewPlaceSaved,
   onSavePreviewPlace,
   onDismissPreviewPlace,
   onDiscoverPlace,
@@ -389,6 +414,7 @@ export function MapPanel({
           phone: previewPlace.phone,
         },
         'map-popup-save-btn',
+        previewPlaceSaved,
       ),
     );
     infoWindow.current?.open({ map, anchor: previewMarker.current });
@@ -404,7 +430,7 @@ export function MapPanel({
 
     map.panTo(position);
     map.setZoom(15);
-  }, [previewPlace, ready]);
+  }, [previewPlace, previewPlaceSaved, ready]);
 
   return (
     <div className="map-panel">

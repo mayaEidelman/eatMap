@@ -410,6 +410,34 @@ button {
   object-fit: cover;
 }
 
+.save-to-list-item {
+  grid-template-columns: 44px 1fr 24px;
+}
+
+.save-to-list-item--active {
+  background: rgba(37, 99, 235, 0.08);
+  border-radius: 12px;
+}
+
+.save-to-list-item__check {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1.5px solid rgba(15, 23, 42, 0.2);
+  font-weight: 700;
+  font-size: 13px;
+  color: transparent;
+}
+
+.save-to-list-item__check--active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
 .account-list-sidebar__item strong,
 .account-list-sidebar__item span,
 .account-list-sidebar__item small {
@@ -1203,20 +1231,34 @@ button.stat-pill {
   color: #b91c1c;
 }
 
-.map-popup__save-button {
-  margin-top: 4px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  border: none;
-  background: #111827;
-  color: #ffffff;
-  font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
+.map-popup__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.map-popup__save-button:hover {
-  background: #1f2937;
+.map-popup__save-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #64748b;
+  cursor: pointer;
+  border-radius: 999px;
+}
+
+.map-popup__save-icon:hover {
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.map-popup__save-icon--active {
+  color: #2563eb;
 }
 
 @media (max-width: 1240px) {

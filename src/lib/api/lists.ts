@@ -102,18 +102,24 @@ async function savePlacesAndDays(listId: string, places: DraftPlace[], days: Dra
   const { error: deleteDaysError } = await supabase.from('trip_days').delete().eq('list_id', listId);
   if (deleteDaysError) throw deleteDaysError;
 
-  for (const [index, day] of days.entries()) {
-    const { error: dayError } = await supabase
-      .from('trip_days')
-      .insert({ id: day.id, list_id: listId, label: day.label, sort_order: index });
-    if (dayError) throw dayError;
+  if (days.length === 0) {
+    return;
+  }
 
-    if (day.placeIds.length > 0) {
-      const { error: dayPlacesError } = await supabase
-        .from('trip_day_places')
-        .insert(day.placeIds.map((placeId, placeIndex) => ({ day_id: day.id, place_id: placeId, sort_order: placeIndex })));
-      if (dayPlacesError) throw dayPlacesError;
-    }
+  // One insert for every day, and one for every day's places -- not one round trip per day.
+  // A list with a couple weeks of generated days used to mean dozens of sequential requests
+  // here, which is exactly what made saving feel like it hung.
+  const { error: daysError } = await supabase
+    .from('trip_days')
+    .insert(days.map((day, index) => ({ id: day.id, list_id: listId, label: day.label, sort_order: index })));
+  if (daysError) throw daysError;
+
+  const dayPlaceRows = days.flatMap((day) =>
+    day.placeIds.map((placeId, placeIndex) => ({ day_id: day.id, place_id: placeId, sort_order: placeIndex })),
+  );
+  if (dayPlaceRows.length > 0) {
+    const { error: dayPlacesError } = await supabase.from('trip_day_places').insert(dayPlaceRows);
+    if (dayPlacesError) throw dayPlacesError;
   }
 }
 

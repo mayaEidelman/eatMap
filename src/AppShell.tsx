@@ -33,6 +33,15 @@ import type {
 
 const DEFAULT_COVER = 'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?q=80&w=1200&auto=format&fit=crop';
 
+/** Places actually assigned to some day -- excludes places saved to the list but never dragged
+ * into the trip plan, so "All days" in the timeline means "everything scheduled," not
+ * "everything saved." */
+function getScheduledPlaceIds(list: TripList): Set<string> {
+  const ids = new Set<string>();
+  list.days.forEach((day) => day.placeIds.forEach((placeId) => ids.add(placeId)));
+  return ids;
+}
+
 function getListSummary(listId: string, ratings: Rating[]) {
   const matching = ratings.filter((rating) => rating.listId === listId);
   const count = matching.length;
@@ -152,6 +161,24 @@ function buildDaysFromDateRange(startDate: string, endDate: string): DraftDay[] 
   return days;
 }
 
+/** Same physical place, not just same name -- two different places can share a name (e.g. a
+ * chain), so name alone isn't a safe identity check. Google's place_id is authoritative when
+ * both sides have one; otherwise falls back to name+address both matching. */
+function isSamePlace(a: DraftPlace, b: DraftPlace): boolean {
+  if (a.googlePlaceId && b.googlePlaceId) {
+    return a.googlePlaceId === b.googlePlaceId;
+  }
+
+  return (
+    a.name.trim().toLowerCase() === b.name.trim().toLowerCase() &&
+    a.address.trim().toLowerCase() === b.address.trim().toLowerCase()
+  );
+}
+
+function findDuplicatePlace(places: DraftPlace[], candidate: DraftPlace): DraftPlace | undefined {
+  return places.find((place) => isSamePlace(place, candidate));
+}
+
 function filterByQuery(lists: TripList[], query: string) {
   const normalized = query.trim().toLowerCase();
   if (!normalized) {
@@ -216,14 +243,26 @@ function AppShell() {
   }, [currentUser?.id]);
 
   const addDraftPlace = useCallback((place: DraftPlace) => {
-    setDraft((current) => ({ ...current, places: [...current.places, place] }));
+    setDraft((current) => {
+      if (findDuplicatePlace(current.places, place)) {
+        setListFormError(`${place.name} is already in this list.`);
+        return current;
+      }
+
+      setListFormError(null);
+      return { ...current, places: [...current.places, place] };
+    });
   }, []);
 
   const importDraftPlaces = useCallback((imported: DraftPlace[]) => {
     setDraft((current) => {
-      const existingNames = new Set(current.places.map((place) => place.name.trim().toLowerCase()));
-      const newPlaces = imported.filter((place) => !existingNames.has(place.name.trim().toLowerCase()));
-      return { ...current, places: [...current.places, ...newPlaces] };
+      const accepted: DraftPlace[] = [];
+      for (const place of imported) {
+        if (!findDuplicatePlace([...current.places, ...accepted], place)) {
+          accepted.push(place);
+        }
+      }
+      return { ...current, places: [...current.places, ...accepted] };
     });
     setImportPlacesOpen(false);
   }, []);
@@ -329,12 +368,11 @@ function AppShell() {
 
       const selectedDayId = selectedDayByListId[list.id];
       const day = selectedDayId ? list.days.find((tripDay) => tripDay.id === selectedDayId) : undefined;
-      if (!day) {
-        return list;
-      }
+      // Timeline open with no specific day picked ("All days") -- show everything scheduled
+      // into a day, not every saved place (some may never have been dragged into the plan).
+      const visiblePlaceIds = day ? new Set(day.placeIds) : getScheduledPlaceIds(list);
 
-      const dayPlaceIds = new Set(day.placeIds);
-      return { ...list, places: list.places.filter((place) => dayPlaceIds.has(place.id)) };
+      return { ...list, places: list.places.filter((place) => visiblePlaceIds.has(place.id)) };
     });
   }, [myMapLists, openTimelineListIds, selectedDayByListId]);
 
@@ -343,6 +381,11 @@ function AppShell() {
   const listDetail = data ? data.lists.find((list) => list.id === listDetailId) ?? null : null;
   const listDetailOwner = data && listDetail ? data.users.find((user) => user.id === listDetail.ownerId) : undefined;
   const inspectedPlace = listDetail?.places.find((place) => place.id === inspectedPlaceId) ?? null;
+
+  const mapSearchPlaceSaved = useMemo(
+    () => (mapSearchPlace ? Boolean(findDuplicatePlace(accountLists.flatMap((list) => list.places), mapSearchPlace)) : false),
+    [accountLists, mapSearchPlace],
+  );
 
   const viewedProfile = data ? data.users.find((user) => user.id === viewedProfileId) ?? null : null;
   const viewedProfileStats = data && viewedProfile ? getUserStats(viewedProfile.id, data) : null;
@@ -551,20 +594,27 @@ function AppShell() {
     setSaveToListError(null);
   }
 
-  async function addPlaceToExistingList(list: TripList) {
+  async function togglePlaceInList(list: TripList) {
     if (!mapSearchPlace) {
       return;
     }
 
+    const existing = findDuplicatePlace(list.places, mapSearchPlace);
+
     setSaveToListSubmitting(true);
     setSaveToListError(null);
     try {
-      const updatedDraft: DraftList = { ...buildListDraft(list), places: [...list.places, mapSearchPlace] };
+      const updatedDraft: DraftList = existing
+        ? {
+            ...buildListDraft(list),
+            places: list.places.filter((place) => place.id !== existing.id),
+            days: list.days.map((day) => ({ ...day, placeIds: day.placeIds.filter((placeId) => placeId !== existing.id) })),
+          }
+        : { ...buildListDraft(list), places: [...list.places, mapSearchPlace] };
+
       await actions.saveList('edit', list.id, updatedDraft);
-      setMapSearchPlace(null);
-      setSaveToListOpen(false);
     } catch (error) {
-      setSaveToListError(error instanceof Error ? error.message : 'Could not add this place. Please try again.');
+      setSaveToListError(error instanceof Error ? error.message : 'Could not update this list. Please try again.');
     } finally {
       setSaveToListSubmitting(false);
     }
@@ -805,6 +855,7 @@ function AppShell() {
             selectedListId={selectedList?.id ?? myMapLists[0]?.id ?? ''}
             onSelectList={setSelectedListId}
             previewPlace={mapSearchPlace}
+            previewPlaceSaved={mapSearchPlaceSaved}
             onSavePreviewPlace={() => setSaveToListOpen(true)}
             onDismissPreviewPlace={discardMapSearchPlace}
             onDiscoverPlace={handleMapPlaceFound}
@@ -1286,23 +1337,30 @@ function AppShell() {
               </button>
             </div>
             <div className="account-list-sidebar">
-              {accountLists.map((list) => (
-                <button
-                  key={list.id}
-                  type="button"
-                  className="account-list-sidebar__hit"
-                  onClick={() => addPlaceToExistingList(list)}
-                  disabled={saveToListSubmitting}
-                >
-                  <img src={list.coverImage} alt="" className="account-list-sidebar__thumb" />
-                  <div>
-                    <strong>{list.title}</strong>
-                    <span>
-                      {list.location}, {list.country}
+              {accountLists.map((list) => {
+                const savedHere = Boolean(findDuplicatePlace(list.places, mapSearchPlace));
+                return (
+                  <button
+                    key={list.id}
+                    type="button"
+                    className={`account-list-sidebar__hit save-to-list-item${savedHere ? ' save-to-list-item--active' : ''}`}
+                    onClick={() => togglePlaceInList(list)}
+                    disabled={saveToListSubmitting}
+                    aria-pressed={savedHere}
+                  >
+                    <img src={list.coverImage} alt="" className="account-list-sidebar__thumb" />
+                    <div>
+                      <strong>{list.title}</strong>
+                      <span>
+                        {list.location}, {list.country}
+                      </span>
+                    </div>
+                    <span className={`save-to-list-item__check${savedHere ? ' save-to-list-item__check--active' : ''}`} aria-hidden="true">
+                      {savedHere ? '✓' : ''}
                     </span>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
               {accountLists.length === 0 ? <p className="sidebar__empty">You don't have any lists yet.</p> : null}
             </div>
             {saveToListError ? <p className="place-autocomplete__error">{saveToListError}</p> : null}
@@ -1314,6 +1372,9 @@ function AppShell() {
                 disabled={saveToListSubmitting}
               >
                 + New list with this place
+              </button>
+              <button type="button" className="primary-button" onClick={() => setSaveToListOpen(false)}>
+                Done
               </button>
             </div>
           </div>
@@ -2101,11 +2162,10 @@ function SidebarListItem({
   onSelectDay: (dayId: string | null) => void;
 }) {
   const selectedDay = selectedDayId ? list.days.find((day) => day.id === selectedDayId) ?? null : null;
-  const activityPlaces = selectedDay
-    ? selectedDay.placeIds
-        .map((placeId) => list.places.find((place) => place.id === placeId))
-        .filter((place): place is Place => Boolean(place))
-    : list.places;
+  const scheduledPlaceIds = selectedDay ? selectedDay.placeIds : Array.from(getScheduledPlaceIds(list));
+  const activityPlaces = scheduledPlaceIds
+    .map((placeId) => list.places.find((place) => place.id === placeId))
+    .filter((place): place is Place => Boolean(place));
 
   return (
     <div className={`account-list-sidebar__item${active ? ' account-list-sidebar__item--active' : ''}`}>
