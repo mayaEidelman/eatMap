@@ -95,6 +95,61 @@ export type Like = {
   listId: string;
 };
 
+export const EXPENSE_CATEGORIES = ['food', 'transport', 'lodging', 'activities', 'shopping', 'other'] as const;
+export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
+
+export type GroupMemberStatus = 'invited' | 'accepted' | 'declined';
+
+export type ExpenseGroup = {
+  id: string;
+  listId: string;
+  ownerId: string;
+  name: string;
+  baseCurrency: string;
+  createdAt: string;
+};
+
+export type ExpenseGroupMember = {
+  groupId: string;
+  userId: string;
+  status: GroupMemberStatus;
+  invitedBy: string;
+  createdAt: string;
+  respondedAt?: string;
+};
+
+export type ExpenseShare = {
+  userId: string;
+  amount: number;
+};
+
+export type Expense = {
+  id: string;
+  groupId: string;
+  paidBy: string;
+  description: string;
+  category: ExpenseCategory;
+  amount: number;
+  currency: string;
+  /** Rate from `currency` to the group's base currency, snapshotted when the expense was added. */
+  exchangeRate: number;
+  /** amount * exchangeRate, in the group's base currency. */
+  convertedAmount: number;
+  spentAt: string;
+  createdAt: string;
+  shares: ExpenseShare[];
+};
+
+export type ExpenseSettlement = {
+  id: string;
+  groupId: string;
+  fromUser: string;
+  toUser: string;
+  /** Always in the group's base currency. */
+  amount: number;
+  createdAt: string;
+};
+
 export type AppData = {
   currentUserId: string;
   users: User[];
@@ -134,4 +189,4 @@ export type ProfileDraft = {
   avatarImage: string;
 };
 
-export type PageMode = 'home' | 'explore' | 'account' | 'dm';
+export type PageMode = 'home' | 'explore' | 'account' | 'dm' | 'expenses';

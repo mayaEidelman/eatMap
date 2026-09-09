@@ -214,6 +214,54 @@ const demoMessages = [
   { fromId: 'u-maya', toId: 'u-aya', text: 'I want to save your Lisbon rooftop list next.', createdAt: '2026-07-26T09:10:00.000Z' },
 ];
 
+const demoExpenseGroups = [
+  {
+    id: 'group-lisbon',
+    listId: 'list-lisbon',
+    ownerId: 'u-aya',
+    name: 'Lisbon trip expenses',
+    baseCurrency: 'EUR',
+    members: [
+      { userId: 'u-aya', status: 'accepted' },
+      { userId: 'u-maya', status: 'accepted' },
+      { userId: 'u-noah', status: 'invited' },
+    ],
+  },
+];
+
+const demoExpenses = [
+  {
+    groupId: 'group-lisbon',
+    paidBy: 'u-aya',
+    description: 'Airbnb in Alfama',
+    category: 'lodging',
+    amount: 320,
+    currency: 'EUR',
+    exchangeRate: 1,
+    convertedAmount: 320,
+    spentAt: '2026-07-10',
+    shares: [
+      { userId: 'u-aya', amount: 160 },
+      { userId: 'u-maya', amount: 160 },
+    ],
+  },
+  {
+    groupId: 'group-lisbon',
+    paidBy: 'u-maya',
+    description: 'Tram tickets + pastel de nata crawl',
+    category: 'food',
+    amount: 40,
+    currency: 'EUR',
+    exchangeRate: 1,
+    convertedAmount: 40,
+    spentAt: '2026-07-11',
+    shares: [
+      { userId: 'u-aya', amount: 25 },
+      { userId: 'u-maya', amount: 15 },
+    ],
+  },
+];
+
 async function getOrCreateDemoUser(user) {
   const { data: created, error: createError } = await supabase.auth.admin.createUser({
     email: user.email,
@@ -367,6 +415,60 @@ async function run() {
     if (error) throw error;
   }
 
+  const expenseGroupIdByOldId = {};
+  for (const group of demoExpenseGroups) {
+    const { data: insertedGroup, error: groupError } = await supabase
+      .from('expense_groups')
+      .insert({
+        list_id: listIdByOldId[group.listId],
+        owner_id: idMap[group.ownerId],
+        name: group.name,
+        base_currency: group.baseCurrency,
+      })
+      .select('id')
+      .single();
+    if (groupError) throw groupError;
+    expenseGroupIdByOldId[group.id] = insertedGroup.id;
+
+    for (const member of group.members) {
+      const { error: memberError } = await supabase.from('expense_group_members').insert({
+        group_id: insertedGroup.id,
+        user_id: idMap[member.userId],
+        status: member.status,
+        invited_by: idMap[group.ownerId],
+        responded_at: member.status === 'accepted' ? new Date().toISOString() : null,
+      });
+      if (memberError) throw memberError;
+    }
+
+    console.log(`Seeded expense group: ${group.name}`);
+  }
+
+  for (const expense of demoExpenses) {
+    const { data: insertedExpense, error: expenseError } = await supabase
+      .from('expenses')
+      .insert({
+        group_id: expenseGroupIdByOldId[expense.groupId],
+        paid_by: idMap[expense.paidBy],
+        description: expense.description,
+        category: expense.category,
+        amount: expense.amount,
+        currency: expense.currency,
+        exchange_rate: expense.exchangeRate,
+        converted_amount: expense.convertedAmount,
+        spent_at: expense.spentAt,
+      })
+      .select('id')
+      .single();
+    if (expenseError) throw expenseError;
+
+    const { error: sharesError } = await supabase
+      .from('expense_shares')
+      .insert(expense.shares.map((share) => ({ expense_id: insertedExpense.id, user_id: idMap[share.userId], amount: share.amount })));
+    if (sharesError) throw sharesError;
+  }
+
+  console.log('Seeded demo expenses.');
   console.log('Seed complete.');
 }
 

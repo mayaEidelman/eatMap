@@ -3,9 +3,15 @@ import { ImportPlacesModal } from './components/ImportPlacesModal';
 import { MapPanel } from './components/MapPanel';
 import { PlaceAutocomplete, type PlaceSearchResult } from './components/PlaceAutocomplete';
 import { CATEGORY_META, groupPlacesByCategory } from './lib/categories';
+import { CURRENCIES } from './lib/currency';
+import { EXPENSE_CATEGORY_META } from './lib/expenseCategories';
+import { computeBalances, simplifyDebts, sharesSumTo, splitEqually } from './lib/expenseMath';
+import type { ExpenseGroupWithMembers } from './lib/api/expenses';
 import { useAppActions } from './hooks/useAppActions';
 import { useAppData } from './hooks/useAppData';
 import { useAuthSession } from './hooks/useAuthSession';
+import { useExpenseGroups } from './hooks/useExpenseGroups';
+import { useGroupExpenses } from './hooks/useGroupExpenses';
 import { useMessages } from './hooks/useMessages';
 import { defaultColorForIndex, LIST_MARKER_COLORS } from './lib/mapColors';
 import { fetchPlaceDetails, type PlaceDetails } from './lib/placeDetails';
@@ -13,13 +19,14 @@ import { signInWithGoogle, signInWithMagicLink, signOut as signOutOfSupabase } f
 import { isSupabaseConfigured, supabaseConfigError } from './lib/supabaseClient';
 import { uploadAttachmentFile, uploadPublicMedia } from './lib/storage';
 import { emptyDraft } from './mock';
-import { PLACE_CATEGORIES } from './types';
+import { EXPENSE_CATEGORIES, PLACE_CATEGORIES } from './types';
 import type {
   AppData,
   AttachmentFile,
   DraftDay,
   DraftList,
   DraftPlace,
+  ExpenseCategory,
   PageMode,
   Place,
   PlaceAttachment,
@@ -179,6 +186,26 @@ function findDuplicatePlace(places: DraftPlace[], candidate: DraftPlace): DraftP
   return places.find((place) => isSamePlace(place, candidate));
 }
 
+/** Supabase-js doesn't always throw a real `Error` -- when the underlying `fetch()` itself fails
+ * (network-level failure, not an HTTP error response), postgrest-js hands back a plain
+ * `{ message, details, hint, code }` object instead. Checking `instanceof Error` alone silently
+ * discards that entire object, which is how a real failure turned into a useless "Unknown error." */
+function describeQueryError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (error && typeof error === 'object') {
+    const shaped = error as { message?: string; hint?: string; details?: string; code?: string };
+    const parts = [shaped.message, shaped.hint, shaped.code ? `(${shaped.code})` : undefined].filter(Boolean);
+    if (parts.length > 0) {
+      return parts.join(' — ');
+    }
+  }
+
+  return 'Unknown error.';
+}
+
 function filterByQuery(lists: TripList[], query: string) {
   const normalized = query.trim().toLowerCase();
   if (!normalized) {
@@ -197,6 +224,14 @@ function AppShell() {
   const { data, isLoading: dataLoading, error: dataError } = useAppData(currentUserId);
   const actions = useAppActions(currentUserId);
   const { messages: dmMessages, sendMessage: sendDmMessage } = useMessages(currentUserId);
+  const {
+    groups: expenseGroups,
+    error: expenseGroupsError,
+    createGroup: createExpenseGroup,
+    inviteMember: inviteExpenseGroupMember,
+    respondToInvite: respondToExpenseInvite,
+    removeMember: removeExpenseGroupMember,
+  } = useExpenseGroups(currentUserId);
 
   const [magicLinkEmail, setMagicLinkEmail] = useState('');
   const [magicLinkSent, setMagicLinkSent] = useState(false);
@@ -204,6 +239,7 @@ function AppShell() {
 
   const [page, setPage] = useState<PageMode>('home');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mapSearchPopoverOpen, setMapSearchPopoverOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedListId, setSelectedListId] = useState('');
   const [listDetailId, setListDetailId] = useState<string | null>(null);
@@ -226,6 +262,30 @@ function AppShell() {
   const [inspectedPlaceId, setInspectedPlaceId] = useState<string | null>(null);
   const [openTimelineListIds, setOpenTimelineListIds] = useState<Set<string>>(new Set());
   const [selectedDayByListId, setSelectedDayByListId] = useState<Record<string, string | null>>({});
+
+  const [expenseGroupDetailId, setExpenseGroupDetailId] = useState<string | null>(null);
+  const [newExpenseGroupOpen, setNewExpenseGroupOpen] = useState(false);
+  const [newExpenseGroupListId, setNewExpenseGroupListId] = useState('');
+  const [newExpenseGroupName, setNewExpenseGroupName] = useState('');
+  const [newExpenseGroupCurrency, setNewExpenseGroupCurrency] = useState('USD');
+  const [newExpenseGroupInviteIds, setNewExpenseGroupInviteIds] = useState<string[]>([]);
+  const [newExpenseGroupError, setNewExpenseGroupError] = useState<string | null>(null);
+  const [newExpenseGroupSubmitting, setNewExpenseGroupSubmitting] = useState(false);
+  const [inviteMoreUserId, setInviteMoreUserId] = useState('');
+  const [addExpenseFormOpen, setAddExpenseFormOpen] = useState(false);
+  const [addExpenseError, setAddExpenseError] = useState<string | null>(null);
+  const [addExpenseSubmitting, setAddExpenseSubmitting] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({
+    description: '',
+    category: 'food' as ExpenseCategory,
+    amount: '',
+    currency: 'USD',
+    spentAt: new Date().toISOString().slice(0, 10),
+    paidBy: '',
+    participantIds: [] as string[],
+    splitMode: 'equal' as 'equal' | 'custom',
+    customAmounts: {} as Record<string, string>,
+  });
 
   const currentUser = data ? data.users.find((user) => user.id === data.currentUserId) : undefined;
   const selectedList = data ? data.lists.find((list) => list.id === selectedListId) ?? data.lists[0] : undefined;
@@ -346,17 +406,7 @@ function AppShell() {
     [data],
   );
 
-  const myMapLists = useMemo(() => {
-    const combined = [...accountLists, ...savedLists];
-    const query = search.trim().toLowerCase();
-    if (!query) {
-      return combined;
-    }
-
-    return combined.filter((list) =>
-      [list.title, list.location, list.country, list.vibe].some((value) => value.toLowerCase().includes(query)),
-    );
-  }, [accountLists, savedLists, search]);
+  const myMapLists = useMemo(() => [...accountLists, ...savedLists], [accountLists, savedLists]);
 
   // When a list's sidebar timeline is open and a specific day is picked, the map should only
   // show that day's places; closed (or open with no day picked, i.e. "all days") shows everything.
@@ -397,6 +447,40 @@ function AppShell() {
         ? getFollowerUsers(peopleListOpen.userId, data)
         : getFollowingUsers(peopleListOpen.userId, data)
       : [];
+
+  const myExpenseMembership = (group: ExpenseGroupWithMembers) =>
+    group.members.find((member) => member.userId === data?.currentUserId);
+  const activeExpenseGroups = data ? expenseGroups.filter((group) => myExpenseMembership(group)?.status === 'accepted') : [];
+  const pendingExpenseInvites = data ? expenseGroups.filter((group) => myExpenseMembership(group)?.status === 'invited') : [];
+
+  const expenseGroupDetail = expenseGroups.find((group) => group.id === expenseGroupDetailId) ?? null;
+  const expenseGroupDetailMembers = data && expenseGroupDetail
+    ? expenseGroupDetail.members
+        .map((member) => ({ member, user: data.users.find((user) => user.id === member.userId) }))
+        .filter((entry): entry is { member: (typeof expenseGroupDetail.members)[number]; user: AppData['users'][number] } =>
+          Boolean(entry.user),
+        )
+    : [];
+  const acceptedGroupMembers = expenseGroupDetailMembers.filter(({ member }) => member.status === 'accepted');
+  const acceptedGroupMemberIds = acceptedGroupMembers.map(({ user }) => user.id);
+  const inviteCandidates =
+    data && expenseGroupDetail
+      ? data.users.filter(
+          (user) => user.id !== data.currentUserId && !expenseGroupDetail.members.some((member) => member.userId === user.id),
+        )
+      : [];
+
+  const {
+    expenses: groupExpenses,
+    settlements: groupSettlements,
+    error: groupExpensesError,
+    addExpense: addGroupExpense,
+    deleteExpense: deleteGroupExpense,
+    addSettlement: addGroupSettlement,
+  } = useGroupExpenses(expenseGroupDetailId, expenseGroupDetail?.baseCurrency);
+
+  const groupBalances = computeBalances(acceptedGroupMemberIds, groupExpenses, groupSettlements);
+  const debtSuggestions = simplifyDebts(groupBalances);
 
   useEffect(() => {
     if (!dmThreadUserId && peopleToFollow[0]) {
@@ -737,7 +821,122 @@ function AppShell() {
     setProfileEditorOpen(false);
   }
 
-  const pageLabel = page === 'home' ? 'Map' : page === 'explore' ? 'Explore' : page === 'dm' ? 'Messages' : 'Account';
+  function openNewExpenseGroup() {
+    setNewExpenseGroupListId(accountLists[0]?.id ?? '');
+    setNewExpenseGroupName('');
+    setNewExpenseGroupCurrency('USD');
+    setNewExpenseGroupInviteIds([]);
+    setNewExpenseGroupError(null);
+    setNewExpenseGroupOpen(true);
+  }
+
+  function toggleNewExpenseGroupInvite(userId: string) {
+    setNewExpenseGroupInviteIds((current) =>
+      current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId],
+    );
+  }
+
+  async function submitNewExpenseGroup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setNewExpenseGroupError(null);
+
+    const listId = newExpenseGroupListId;
+    const name = newExpenseGroupName.trim();
+    if (!listId || !name) {
+      setNewExpenseGroupError('Pick a trip and give the group a name.');
+      return;
+    }
+
+    setNewExpenseGroupSubmitting(true);
+    try {
+      const groupId = await createExpenseGroup(listId, name, newExpenseGroupCurrency, newExpenseGroupInviteIds);
+      setNewExpenseGroupOpen(false);
+      setExpenseGroupDetailId(groupId);
+    } catch (error) {
+      console.error('createExpenseGroup failed:', error);
+      setNewExpenseGroupError(describeQueryError(error));
+    } finally {
+      setNewExpenseGroupSubmitting(false);
+    }
+  }
+
+  async function submitInviteMore() {
+    if (!expenseGroupDetail || !inviteMoreUserId) return;
+    await inviteExpenseGroupMember(expenseGroupDetail.id, inviteMoreUserId);
+    setInviteMoreUserId('');
+  }
+
+  function openAddExpenseForm() {
+    if (!expenseGroupDetail) return;
+    setExpenseForm({
+      description: '',
+      category: 'food',
+      amount: '',
+      currency: expenseGroupDetail.baseCurrency,
+      spentAt: new Date().toISOString().slice(0, 10),
+      paidBy: appData.currentUserId,
+      participantIds: acceptedGroupMemberIds,
+      splitMode: 'equal',
+      customAmounts: {},
+    });
+    setAddExpenseError(null);
+    setAddExpenseFormOpen(true);
+  }
+
+  function toggleExpenseParticipant(userId: string) {
+    setExpenseForm((current) => ({
+      ...current,
+      participantIds: current.participantIds.includes(userId)
+        ? current.participantIds.filter((id) => id !== userId)
+        : [...current.participantIds, userId],
+    }));
+  }
+
+  async function submitExpenseForm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAddExpenseError(null);
+
+    const amount = Number(expenseForm.amount);
+    if (!expenseForm.description.trim() || !amount || amount <= 0 || expenseForm.participantIds.length === 0) {
+      setAddExpenseError('Add a description, a positive amount, and at least one participant.');
+      return;
+    }
+
+    const shares =
+      expenseForm.splitMode === 'equal'
+        ? splitEqually(amount, expenseForm.participantIds)
+        : expenseForm.participantIds.map((userId) => ({
+            userId,
+            amount: Number(expenseForm.customAmounts[userId] || 0),
+          }));
+
+    if (expenseForm.splitMode === 'custom' && !sharesSumTo(shares, amount)) {
+      setAddExpenseError('The custom split has to add up to the total amount.');
+      return;
+    }
+
+    setAddExpenseSubmitting(true);
+    try {
+      await addGroupExpense({
+        paidBy: expenseForm.paidBy,
+        description: expenseForm.description.trim(),
+        category: expenseForm.category,
+        amount,
+        currency: expenseForm.currency,
+        spentAt: expenseForm.spentAt,
+        shares,
+      });
+      setAddExpenseFormOpen(false);
+    } catch (error) {
+      console.error('addExpense failed:', error);
+      setAddExpenseError(describeQueryError(error));
+    } finally {
+      setAddExpenseSubmitting(false);
+    }
+  }
+
+  const pageLabel =
+    page === 'home' ? 'Map' : page === 'explore' ? 'Explore' : page === 'dm' ? 'Messages' : page === 'expenses' ? 'Expenses' : 'Account';
 
   return (
     <div className="app-shell">
@@ -751,24 +950,54 @@ function AppShell() {
         </div>
 
         <nav className="topbar__nav" aria-label="Main navigation">
-          <button className={`nav-tab${page === 'home' ? ' nav-tab--active' : ''}`} type="button" onClick={() => setPage('home')}>
-            Map
+          <button
+            className={`nav-tab${page === 'home' ? ' nav-tab--active' : ''}`}
+            type="button"
+            onClick={() => setPage('home')}
+            aria-label="Map"
+            title="Map"
+          >
+            <span aria-hidden="true">🗺️</span>
           </button>
-          <button className={`nav-tab${page === 'explore' ? ' nav-tab--active' : ''}`} type="button" onClick={() => setPage('explore')}>
-            Explore
+          <button
+            className={`nav-tab${page === 'explore' ? ' nav-tab--active' : ''}`}
+            type="button"
+            onClick={() => setPage('explore')}
+            aria-label="Explore"
+            title="Explore"
+          >
+            <span aria-hidden="true">🧭</span>
           </button>
-          <button className={`nav-tab${page === 'dm' ? ' nav-tab--active' : ''}`} type="button" onClick={() => setPage('dm')}>
-            DM
+          <button
+            className={`nav-tab${page === 'dm' ? ' nav-tab--active' : ''}`}
+            type="button"
+            onClick={() => setPage('dm')}
+            aria-label="Messages"
+            title="Messages"
+          >
+            <span aria-hidden="true">💬</span>
           </button>
-          <button className={`nav-tab${page === 'account' ? ' nav-tab--active' : ''}`} type="button" onClick={() => setPage('account')}>
-            Account
+          <button
+            className={`nav-tab${page === 'expenses' ? ' nav-tab--active' : ''}`}
+            type="button"
+            onClick={() => setPage('expenses')}
+            aria-label="Expenses"
+            title="Expenses"
+          >
+            <span aria-hidden="true">💵</span>
+            {pendingExpenseInvites.length > 0 ? <span className="nav-tab__badge">{pendingExpenseInvites.length}</span> : null}
+          </button>
+          <button
+            className={`nav-tab${page === 'account' ? ' nav-tab--active' : ''}`}
+            type="button"
+            onClick={() => setPage('account')}
+            aria-label="Account"
+            title="Account"
+          >
+            <span aria-hidden="true">👤</span>
           </button>
         </nav>
 
-        <label className="topbar__search">
-          <span className="sr-only">Search</span>
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search lists" />
-        </label>
       </header>
 
       {page === 'home' ? (
@@ -845,9 +1074,43 @@ function AppShell() {
               </div>
             </aside>
           ) : (
-            <button className="sidebar-toggle icon-button" type="button" onClick={() => setSidebarOpen(true)} aria-label="Show sidebar">
-              ›
-            </button>
+            <div className="map-search-float">
+              <button
+                className="map-search-float__button icon-button"
+                type="button"
+                onClick={() => setMapSearchPopoverOpen((open) => !open)}
+                aria-label="Search places"
+                aria-expanded={mapSearchPopoverOpen}
+              >
+                🔍
+              </button>
+
+              {mapSearchPopoverOpen ? (
+                <div className="map-search-float__popover panel">
+                  <div className="map-search-float__header">
+                    <strong>Search places</strong>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => {
+                        setSidebarOpen(true);
+                        setMapSearchPopoverOpen(false);
+                      }}
+                      aria-label="Show full sidebar"
+                      title="Show full sidebar"
+                    >
+                      ‹
+                    </button>
+                  </div>
+                  <PlaceAutocomplete
+                    onAdd={(place) => {
+                      handleMapPlaceFound(place);
+                      setMapSearchPopoverOpen(false);
+                    }}
+                  />
+                </div>
+              ) : null}
+            </div>
           )}
 
           <MapPanel
@@ -865,6 +1128,11 @@ function AppShell() {
 
       {page === 'explore' ? (
         <div className="explore-page page-transition">
+          <label className="explore-page__search">
+            <span className="sr-only">Search lists</span>
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search lists" />
+          </label>
+
           <div className="explore-rect-grid">
             {exploreLists.map((list) => (
               <RectCard
@@ -934,6 +1202,83 @@ function AppShell() {
                 Send
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {page === 'expenses' ? (
+        <div className="expenses-page panel page-transition">
+          {expenseGroupsError ? (
+            <p className="place-autocomplete__error">
+              Could not load expense groups: {describeQueryError(expenseGroupsError)}
+            </p>
+          ) : null}
+
+          {pendingExpenseInvites.length > 0 ? (
+            <div className="expenses-page__invites">
+              <div className="section-heading">
+                <h3>Pending invitations</h3>
+                <span>{pendingExpenseInvites.length}</span>
+              </div>
+              <div className="expense-invite-list">
+                {pendingExpenseInvites.map((group) => {
+                  const list = data.lists.find((item) => item.id === group.listId);
+                  const owner = data.users.find((user) => user.id === group.ownerId);
+                  return (
+                    <div key={group.id} className="expense-invite">
+                      <div>
+                        <strong>{group.name}</strong>
+                        <small>
+                          {list ? list.title : 'Trip'} · invited by {owner?.name ?? 'someone'}
+                        </small>
+                      </div>
+                      <div className="expense-invite__actions">
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={() => respondToExpenseInvite(group.id, 'declined')}
+                        >
+                          Decline
+                        </button>
+                        <button
+                          className="primary-button"
+                          type="button"
+                          onClick={() => respondToExpenseInvite(group.id, 'accepted')}
+                        >
+                          Accept
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Expenses</p>
+              <h3>Your trip groups</h3>
+            </div>
+            <button className="secondary-button" type="button" onClick={openNewExpenseGroup}>
+              New group
+            </button>
+          </div>
+
+          <div className="expense-group-grid">
+            {activeExpenseGroups.map((group) => (
+              <ExpenseGroupCard
+                key={group.id}
+                group={group}
+                list={data.lists.find((item) => item.id === group.listId)}
+                currentUserId={data.currentUserId}
+                users={data.users}
+                onOpen={() => setExpenseGroupDetailId(group.id)}
+              />
+            ))}
+            {activeExpenseGroups.length === 0 ? (
+              <p className="sidebar__empty">No expense groups yet. Start one from a trip above.</p>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -1670,6 +2015,355 @@ function AppShell() {
           </div>
         </div>
       ) : null}
+
+      {newExpenseGroupOpen ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setNewExpenseGroupOpen(false)}>
+          <div className="modal panel" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="section-heading">
+              <h3>New expense group</h3>
+            </div>
+            <form className="form-grid" onSubmit={submitNewExpenseGroup}>
+              <label className="form-grid__full">
+                <span>Trip</span>
+                <select value={newExpenseGroupListId} onChange={(event) => setNewExpenseGroupListId(event.target.value)} required>
+                  <option value="" disabled>
+                    Pick a trip…
+                  </option>
+                  {accountLists.map((list) => (
+                    <option key={list.id} value={list.id}>
+                      {list.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="form-grid__full">
+                <span>Group name</span>
+                <input
+                  value={newExpenseGroupName}
+                  onChange={(event) => setNewExpenseGroupName(event.target.value)}
+                  placeholder="e.g. Lisbon trip"
+                  required
+                />
+              </label>
+
+              <label>
+                <span>Base currency</span>
+                <select value={newExpenseGroupCurrency} onChange={(event) => setNewExpenseGroupCurrency(event.target.value)}>
+                  {CURRENCIES.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="form-grid__full">
+                <span>Invite</span>
+                <div className="expense-invite-picker">
+                  {peopleToFollow.map((user) => (
+                    <label key={user.id} className="expense-invite-picker__item">
+                      <input
+                        type="checkbox"
+                        checked={newExpenseGroupInviteIds.includes(user.id)}
+                        onChange={() => toggleNewExpenseGroupInvite(user.id)}
+                      />
+                      {user.name}
+                    </label>
+                  ))}
+                  {peopleToFollow.length === 0 ? <p className="sidebar__empty">No other travelers to invite yet.</p> : null}
+                </div>
+              </div>
+
+              {newExpenseGroupError ? <p className="form-grid__full place-autocomplete__error">{newExpenseGroupError}</p> : null}
+
+              <div className="form-grid__full modal-actions">
+                <button className="secondary-button" type="button" onClick={() => setNewExpenseGroupOpen(false)}>
+                  Cancel
+                </button>
+                <button className="primary-button" type="submit" disabled={newExpenseGroupSubmitting}>
+                  {newExpenseGroupSubmitting ? 'Creating…' : 'Create group'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {expenseGroupDetail ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setExpenseGroupDetailId(null)}>
+          <div className="modal panel expense-detail-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <button
+              className="icon-button list-detail-modal__close"
+              type="button"
+              onClick={() => setExpenseGroupDetailId(null)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">{data.lists.find((list) => list.id === expenseGroupDetail.listId)?.title ?? 'Trip'}</p>
+                <h2>{expenseGroupDetail.name}</h2>
+              </div>
+              <span>{expenseGroupDetail.baseCurrency}</span>
+            </div>
+
+            {groupExpensesError ? (
+              <p className="place-autocomplete__error">
+                Could not load this group's expenses: {describeQueryError(groupExpensesError)}
+              </p>
+            ) : null}
+
+            <div className="expense-detail__members">
+              {expenseGroupDetailMembers.map(({ member, user }) => (
+                <div key={member.userId} className="expense-member">
+                  <Avatar user={user} className="dm-thread__avatar" />
+                  <span>
+                    <strong>{user.name}</strong>
+                    <small className={`expense-member__status expense-member__status--${member.status}`}>{member.status}</small>
+                  </span>
+                  {expenseGroupDetail.ownerId === data.currentUserId && member.userId !== data.currentUserId ? (
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => removeExpenseGroupMember(expenseGroupDetail.id, member.userId)}
+                      aria-label={`Remove ${user.name}`}
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+
+            {expenseGroupDetail.ownerId === data.currentUserId ? (
+              <div className="expense-invite-more">
+                <select value={inviteMoreUserId} onChange={(event) => setInviteMoreUserId(event.target.value)}>
+                  <option value="">Invite someone…</option>
+                  {inviteCandidates.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
+                </select>
+                <button className="secondary-button" type="button" onClick={submitInviteMore} disabled={!inviteMoreUserId}>
+                  Invite
+                </button>
+              </div>
+            ) : null}
+
+            <div className="section-heading">
+              <h3>Balances</h3>
+            </div>
+            <div className="balance-list">
+              {debtSuggestions.length === 0 ? (
+                <p className="sidebar__empty">Everyone's settled up.</p>
+              ) : (
+                debtSuggestions.map((suggestion) => {
+                  const from = data.users.find((user) => user.id === suggestion.fromUser);
+                  const to = data.users.find((user) => user.id === suggestion.toUser);
+                  return (
+                    <div key={`${suggestion.fromUser}-${suggestion.toUser}`} className="balance-row">
+                      <span>
+                        <strong>{from?.name ?? 'Someone'}</strong> owes <strong>{to?.name ?? 'someone'}</strong>
+                      </span>
+                      <span className="balance-row__amount">
+                        {expenseGroupDetail.baseCurrency} {suggestion.amount.toFixed(2)}
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={() => addGroupSettlement(suggestion.fromUser, suggestion.toUser, suggestion.amount)}
+                        >
+                          Record payment
+                        </button>
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="section-heading">
+              <h3>Expenses</h3>
+              {!addExpenseFormOpen ? (
+                <button className="secondary-button" type="button" onClick={openAddExpenseForm}>
+                  Add expense
+                </button>
+              ) : null}
+            </div>
+
+            {addExpenseFormOpen ? (
+              <form className="form-grid expense-form" onSubmit={submitExpenseForm}>
+                <label className="form-grid__full">
+                  <span>Description</span>
+                  <input
+                    value={expenseForm.description}
+                    onChange={(event) => setExpenseForm((current) => ({ ...current, description: event.target.value }))}
+                    placeholder="e.g. Dinner at Time Out Market"
+                    required
+                  />
+                </label>
+
+                <label>
+                  <span>Amount</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={expenseForm.amount}
+                    onChange={(event) => setExpenseForm((current) => ({ ...current, amount: event.target.value }))}
+                    required
+                  />
+                </label>
+                <label>
+                  <span>Currency</span>
+                  <select
+                    value={expenseForm.currency}
+                    onChange={(event) => setExpenseForm((current) => ({ ...current, currency: event.target.value }))}
+                  >
+                    {CURRENCIES.map((code) => (
+                      <option key={code} value={code}>
+                        {code}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  <span>Date</span>
+                  <input
+                    type="date"
+                    value={expenseForm.spentAt}
+                    onChange={(event) => setExpenseForm((current) => ({ ...current, spentAt: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  <span>Category</span>
+                  <select
+                    value={expenseForm.category}
+                    onChange={(event) =>
+                      setExpenseForm((current) => ({ ...current, category: event.target.value as ExpenseCategory }))
+                    }
+                  >
+                    {EXPENSE_CATEGORIES.map((category) => (
+                      <option key={category} value={category}>
+                        {EXPENSE_CATEGORY_META[category].label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="form-grid__full">
+                  <span>Paid by</span>
+                  <select
+                    value={expenseForm.paidBy}
+                    onChange={(event) => setExpenseForm((current) => ({ ...current, paidBy: event.target.value }))}
+                  >
+                    {acceptedGroupMembers.map(({ user }) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="form-grid__full expense-form__split">
+                  <div className="section-heading">
+                    <span>Split between</span>
+                    <div className="view-toggle">
+                      <button
+                        type="button"
+                        className={`pill${expenseForm.splitMode === 'equal' ? ' pill--active' : ''}`}
+                        onClick={() => setExpenseForm((current) => ({ ...current, splitMode: 'equal' }))}
+                      >
+                        Equal
+                      </button>
+                      <button
+                        type="button"
+                        className={`pill${expenseForm.splitMode === 'custom' ? ' pill--active' : ''}`}
+                        onClick={() => setExpenseForm((current) => ({ ...current, splitMode: 'custom' }))}
+                      >
+                        Custom
+                      </button>
+                    </div>
+                  </div>
+
+                  {acceptedGroupMembers.map(({ user }) => {
+                    const checked = expenseForm.participantIds.includes(user.id);
+                    return (
+                      <div key={user.id} className="expense-form__participant">
+                        <label className="expense-form__participant-check">
+                          <input type="checkbox" checked={checked} onChange={() => toggleExpenseParticipant(user.id)} />
+                          {user.name}
+                        </label>
+                        {checked && expenseForm.splitMode === 'custom' ? (
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={expenseForm.customAmounts[user.id] ?? ''}
+                            onChange={(event) =>
+                              setExpenseForm((current) => ({
+                                ...current,
+                                customAmounts: { ...current.customAmounts, [user.id]: event.target.value },
+                              }))
+                            }
+                          />
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {addExpenseError ? <p className="form-grid__full place-autocomplete__error">{addExpenseError}</p> : null}
+
+                <div className="form-grid__full modal-actions">
+                  <button className="secondary-button" type="button" onClick={() => setAddExpenseFormOpen(false)}>
+                    Cancel
+                  </button>
+                  <button className="primary-button" type="submit" disabled={addExpenseSubmitting}>
+                    {addExpenseSubmitting ? 'Adding…' : 'Add expense'}
+                  </button>
+                </div>
+              </form>
+            ) : null}
+
+            <div className="expense-list">
+              {groupExpenses.map((expense) => {
+                const payer = data.users.find((user) => user.id === expense.paidBy);
+                return (
+                  <div key={expense.id} className="expense-row">
+                    <span aria-hidden="true">{EXPENSE_CATEGORY_META[expense.category].icon}</span>
+                    <div className="expense-row__body">
+                      <strong>{expense.description}</strong>
+                      <small>
+                        {payer?.name ?? 'Someone'} paid {expense.currency} {expense.amount.toFixed(2)}
+                        {expense.currency !== expenseGroupDetail.baseCurrency
+                          ? ` (${expenseGroupDetail.baseCurrency} ${expense.convertedAmount.toFixed(2)})`
+                          : ''}{' '}
+                        · {expense.spentAt} · split {expense.shares.length} ways
+                      </small>
+                    </div>
+                    {expense.paidBy === data.currentUserId || expenseGroupDetail.ownerId === data.currentUserId ? (
+                      <button
+                        className="icon-button"
+                        type="button"
+                        onClick={() => deleteGroupExpense(expense.id)}
+                        aria-label="Delete expense"
+                      >
+                        ×
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+              {groupExpenses.length === 0 ? <p className="sidebar__empty">No expenses logged yet.</p> : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1687,7 +2381,7 @@ function TripPlanView({
   isOwner: boolean;
   attachments: Record<string, PlaceAttachment> | null;
   currentUserId: string;
-  onSaveAttachment: (placeId: string, attachment: PlaceAttachment | null) => void;
+  onSaveAttachment: (placeId: string, attachment: PlaceAttachment | null) => Promise<void>;
 }) {
   const [viewMode, setViewMode] = useState<'cards' | 'timeline'>('cards');
 
@@ -1791,7 +2485,7 @@ function TimelineAttachment({
   currentUserId,
 }: {
   attachment: PlaceAttachment | undefined;
-  onSave: (attachment: PlaceAttachment | null) => void;
+  onSave: (attachment: PlaceAttachment | null) => Promise<void>;
   currentUserId: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -1803,6 +2497,8 @@ function TimelineAttachment({
    * already have a signed URL in `fileDataUrl` from `fetchAllLists`, so they need no entry here. */
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setNote(attachment?.note ?? '');
@@ -1820,6 +2516,7 @@ function TimelineAttachment({
     }
 
     setUploading(true);
+    setError(null);
     try {
       const added: AttachmentFile[] = [];
       const newPreviews: Record<string, string> = {};
@@ -1833,6 +2530,9 @@ function TimelineAttachment({
 
       setFiles((current) => [...current, ...added]);
       setPreviewUrls((current) => ({ ...current, ...newPreviews }));
+    } catch (uploadError) {
+      console.error('uploadAttachmentFile failed:', uploadError);
+      setError(describeQueryError(uploadError));
     } finally {
       setUploading(false);
     }
@@ -1846,19 +2546,25 @@ function TimelineAttachment({
     setFiles((current) => current.filter((file) => file.id !== id));
   }
 
-  function save() {
+  async function save() {
     const trimmedNote = note.trim();
-    if (!trimmedNote && files.length === 0) {
-      onSave(null);
-    } else {
-      onSave({ note: trimmedNote, files });
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(!trimmedNote && files.length === 0 ? null : { note: trimmedNote, files });
+      setOpen(false);
+    } catch (saveError) {
+      console.error('saveAttachment failed:', saveError);
+      setError(describeQueryError(saveError));
+    } finally {
+      setSaving(false);
     }
-    setOpen(false);
   }
 
   function cancel() {
     setNote(attachment?.note ?? '');
     setFiles(attachment?.files ?? []);
+    setError(null);
     setOpen(false);
   }
 
@@ -1896,6 +2602,8 @@ function TimelineAttachment({
             ))
           : null}
       </div>
+
+      {!open && attachment?.note?.trim() ? <p className="timeline-attachment__note">{attachment.note}</p> : null}
 
       {open ? (
         <div className="timeline-attachment__panel">
@@ -1941,12 +2649,13 @@ function TimelineAttachment({
             {uploading ? 'Uploading…' : 'Attach image or PDF'}
             <input type="file" accept="image/*,application/pdf" multiple onChange={handleFiles} disabled={uploading} hidden />
           </label>
+          {error ? <small className="place-autocomplete__error">{error}</small> : null}
           <div className="timeline-attachment__actions">
-            <button type="button" className="secondary-button" onClick={cancel}>
+            <button type="button" className="secondary-button" onClick={cancel} disabled={saving}>
               Cancel
             </button>
-            <button type="button" className="primary-button" onClick={save}>
-              Save
+            <button type="button" className="primary-button" onClick={save} disabled={uploading || saving}>
+              {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
         </div>
@@ -2103,6 +2812,48 @@ function SavedPlacesView({ places, onSelectPlace }: { places: Place[]; onSelectP
         );
       })}
     </div>
+  );
+}
+
+function ExpenseGroupCard({
+  group,
+  list,
+  currentUserId,
+  users,
+  onOpen,
+}: {
+  group: ExpenseGroupWithMembers;
+  list: TripList | undefined;
+  currentUserId: string;
+  users: AppData['users'];
+  onOpen: () => void;
+}) {
+  const { expenses, settlements } = useGroupExpenses(group.id, group.baseCurrency);
+  const acceptedMemberIds = group.members.filter((member) => member.status === 'accepted').map((member) => member.userId);
+  const myBalance = computeBalances(acceptedMemberIds, expenses, settlements).find((balance) => balance.userId === currentUserId);
+  const balanceLabel = !myBalance || Math.abs(myBalance.net) < 0.01
+    ? "You're settled up"
+    : myBalance.net > 0
+      ? `You are owed ${group.baseCurrency} ${myBalance.net.toFixed(2)}`
+      : `You owe ${group.baseCurrency} ${Math.abs(myBalance.net).toFixed(2)}`;
+
+  return (
+    <button className="expense-group-card" type="button" onClick={onOpen}>
+      <p className="eyebrow">{list?.title ?? 'Trip'}</p>
+      <strong>{group.name}</strong>
+      <div className="expense-group-card__avatars">
+        {group.members.map((member) => (
+          <Avatar
+            key={member.userId}
+            user={users.find((user) => user.id === member.userId)}
+            className="dm-thread__avatar expense-group-card__avatar"
+          />
+        ))}
+      </div>
+      <span className={`expense-group-card__balance${myBalance && myBalance.net < -0.01 ? ' expense-group-card__balance--owe' : myBalance && myBalance.net > 0.01 ? ' expense-group-card__balance--owed' : ''}`}>
+        {balanceLabel}
+      </span>
+    </button>
   );
 }
 
