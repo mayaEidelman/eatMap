@@ -2276,6 +2276,53 @@ button.stat-pill {
   color: var(--muted);
 }
 
+.timeline-time {
+  margin-top: 6px;
+}
+
+.timeline-time__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timeline-time__label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.timeline-time__label--readonly {
+  display: block;
+  margin-top: 2px;
+}
+
+.timeline-time__panel {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 260px;
+}
+
+.timeline-time__field {
+  display: grid;
+  gap: 4px;
+}
+
+.timeline-time__field span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #b45309;
+}
+
+.timeline-time__field input {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: white;
+  font-size: 0.86rem;
+}
+
 .timeline-attachment {
   margin-top: 6px;
 }

@@ -1,11 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { saveAttachment as saveAttachmentApi } from '../lib/api/attachments';
-import { createList, updateList } from '../lib/api/lists';
+import { createList, updateList, updatePlaceTime as updatePlaceTimeApi } from '../lib/api/lists';
 import { rateList as rateListApi } from '../lib/api/ratings';
 import { followUser, likeList, saveList as saveListApi, unfollowUser, unlikeList, unsaveList } from '../lib/api/social';
 import { updateProfile, type ProfileUpdate } from '../lib/api/users';
 import { QUERY_KEYS } from './useAppData';
-import type { DraftList, PlaceAttachment } from '../types';
+import type { DraftList, PlaceAttachment, PlaceTimeRange } from '../types';
 
 /** Every function here mirrors an existing AppShell mutator by name and intent -- only the body
  * changed, from a synchronous `setData` update to an async Supabase call followed by invalidating
@@ -75,5 +75,10 @@ export function useAppActions(currentUserId: string | null) {
     await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.lists });
   }
 
-  return { toggleFollow, toggleSaveList, toggleLike, rateList, saveList, saveProfile, saveAttachment };
+  async function updatePlaceTime(dayId: string, placeId: string, range: PlaceTimeRange) {
+    await updatePlaceTimeApi(dayId, placeId, range);
+    await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.lists });
+  }
+
+  return { toggleFollow, toggleSaveList, toggleLike, rateList, saveList, saveProfile, saveAttachment, updatePlaceTime };
 }

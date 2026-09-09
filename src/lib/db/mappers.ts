@@ -1,4 +1,4 @@
-import type { AttachmentFile, Place, PlaceAttachment, PlaceCategory, TripDay, TripList, User } from '../../types';
+import type { AttachmentFile, Place, PlaceAttachment, PlaceCategory, PlaceTimeRange, TripDay, TripList, User } from '../../types';
 
 // Row shapes as they come back from Postgres (snake_case). Keeping these separate from the
 // app-facing camelCase types in `src/types.ts` means the rest of the app never has to think
@@ -55,6 +55,8 @@ export type TripDayPlaceRow = {
   day_id: string;
   place_id: string;
   sort_order: number;
+  start_time: string | null;
+  end_time: string | null;
 };
 
 export type PlaceAttachmentRow = {
@@ -139,14 +141,28 @@ export function composeTripList(
   const days: TripDay[] = dayRows
     .slice()
     .sort((a, b) => a.sort_order - b.sort_order)
-    .map((dayRow) => ({
-      id: dayRow.id,
-      label: dayRow.label,
-      placeIds: dayPlaceRows
+    .map((dayRow) => {
+      const dayPlaces = dayPlaceRows
         .filter((dayPlace) => dayPlace.day_id === dayRow.id)
-        .sort((a, b) => a.sort_order - b.sort_order)
-        .map((dayPlace) => dayPlace.place_id),
-    }));
+        .sort((a, b) => a.sort_order - b.sort_order);
+
+      const placeTimes: Record<string, PlaceTimeRange> = {};
+      for (const dayPlace of dayPlaces) {
+        if (dayPlace.start_time || dayPlace.end_time) {
+          placeTimes[dayPlace.place_id] = {
+            startTime: dayPlace.start_time ?? undefined,
+            endTime: dayPlace.end_time ?? undefined,
+          };
+        }
+      }
+
+      return {
+        id: dayRow.id,
+        label: dayRow.label,
+        placeIds: dayPlaces.map((dayPlace) => dayPlace.place_id),
+        placeTimes: Object.keys(placeTimes).length > 0 ? placeTimes : undefined,
+      };
+    });
 
   const placeAttachments: Record<string, PlaceAttachment> = {};
   for (const attachmentRow of attachmentRows) {

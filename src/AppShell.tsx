@@ -31,6 +31,7 @@ import type {
   Place,
   PlaceAttachment,
   PlaceCategory,
+  PlaceTimeRange,
   ProfileDraft,
   Rating,
   TripDay,
@@ -47,6 +48,44 @@ function getScheduledPlaceIds(list: TripList): Set<string> {
   const ids = new Set<string>();
   list.days.forEach((day) => day.placeIds.forEach((placeId) => ids.add(placeId)));
   return ids;
+}
+
+/** Places with a startTime sort chronologically; places without one keep their manual drag order,
+ * appended after every timed place (stable within each group). */
+function sortPlaceIdsByTime(placeIds: string[], placeTimes: Record<string, PlaceTimeRange> | undefined): string[] {
+  if (!placeTimes) {
+    return placeIds;
+  }
+
+  return placeIds
+    .map((placeId, index) => ({ placeId, index, startTime: placeTimes[placeId]?.startTime }))
+    .sort((a, b) => {
+      if (a.startTime && b.startTime) return a.startTime.localeCompare(b.startTime);
+      if (a.startTime) return -1;
+      if (b.startTime) return 1;
+      return a.index - b.index;
+    })
+    .map((entry) => entry.placeId);
+}
+
+function formatClockTime(value: string | undefined): string {
+  if (!value) return '';
+  const [hoursRaw, minutesRaw] = value.split(':');
+  const hours = Number(hoursRaw);
+  const minutes = Number(minutesRaw);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return value;
+
+  const period = hours >= 12 ? 'PM' : 'AM';
+  const displayHours = hours % 12 === 0 ? 12 : hours % 12;
+  return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+}
+
+function formatTimeRange(range: PlaceTimeRange | undefined): string {
+  if (!range) return '';
+  const start = formatClockTime(range.startTime);
+  const end = formatClockTime(range.endTime);
+  if (start && end) return `${start} – ${end}`;
+  return start || end;
 }
 
 function getListSummary(listId: string, ratings: Rating[]) {
@@ -643,6 +682,10 @@ function AppShell() {
 
   async function updatePlaceAttachment(placeId: string, attachment: PlaceAttachment | null) {
     await actions.saveAttachment(placeId, attachment);
+  }
+
+  async function updatePlaceTime(dayId: string, placeId: string, range: PlaceTimeRange) {
+    await actions.updatePlaceTime(dayId, placeId, range);
   }
 
   function openCreateList() {
@@ -1877,6 +1920,7 @@ function AppShell() {
               attachments={listDetailOwner?.id === currentUser.id ? listDetail.placeAttachments ?? {} : null}
               currentUserId={data.currentUserId}
               onSaveAttachment={(placeId, attachment) => updatePlaceAttachment(placeId, attachment)}
+              onSaveTime={(dayId, placeId, range) => updatePlaceTime(dayId, placeId, range)}
             />
 
             <SavedPlacesView key={`${listDetail.id}-places`} places={listDetail.places} onSelectPlace={setInspectedPlaceId} />
@@ -2375,6 +2419,7 @@ function TripPlanView({
   attachments,
   currentUserId,
   onSaveAttachment,
+  onSaveTime,
 }: {
   days: TripDay[];
   places: Place[];
@@ -2382,6 +2427,7 @@ function TripPlanView({
   attachments: Record<string, PlaceAttachment> | null;
   currentUserId: string;
   onSaveAttachment: (placeId: string, attachment: PlaceAttachment | null) => Promise<void>;
+  onSaveTime: (dayId: string, placeId: string, range: PlaceTimeRange) => Promise<void>;
 }) {
   const [viewMode, setViewMode] = useState<'cards' | 'timeline'>('cards');
 
@@ -2441,13 +2487,14 @@ function TripPlanView({
               {tripDay.placeIds.length === 0 ? (
                 <p className="trip-day__empty">No stops planned</p>
               ) : (
-                tripDay.placeIds.map((placeId, index) => {
+                sortPlaceIdsByTime(tripDay.placeIds, tripDay.placeTimes).map((placeId, index, sortedIds) => {
                   const place = places.find((item) => item.id === placeId);
                   if (!place) {
                     return null;
                   }
 
-                  const isLast = index === tripDay.placeIds.length - 1;
+                  const isLast = index === sortedIds.length - 1;
+                  const timeRange = tripDay.placeTimes?.[placeId];
                   return (
                     <div key={placeId} className="trip-timeline__item">
                       <div className="trip-timeline__marker">
@@ -2459,6 +2506,14 @@ function TripPlanView({
                           <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span> {place.name}
                         </strong>
                         <small>{place.address}</small>
+                        {isOwner ? (
+                          <TimelineTimeRange
+                            range={timeRange}
+                            onSave={(range) => onSaveTime(tripDay.id, placeId, range)}
+                          />
+                        ) : timeRange ? (
+                          <span className="timeline-time__label timeline-time__label--readonly">{formatTimeRange(timeRange)}</span>
+                        ) : null}
                         {isOwner ? (
                           <TimelineAttachment
                             attachment={attachments?.[placeId]}
@@ -2475,6 +2530,90 @@ function TripPlanView({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function TimelineTimeRange({
+  range,
+  onSave,
+}: {
+  range: PlaceTimeRange | undefined;
+  onSave: (range: PlaceTimeRange) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [startTime, setStartTime] = useState(range?.startTime ?? '');
+  const [endTime, setEndTime] = useState(range?.endTime ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Same "only resync while collapsed" guard as TimelineAttachment -- see the comment there for
+  // why: a background refetch while the panel is open shouldn't clobber an in-progress edit.
+  useEffect(() => {
+    if (open) return;
+    setStartTime(range?.startTime ?? '');
+    setEndTime(range?.endTime ?? '');
+  }, [range, open]);
+
+  const hasContent = Boolean(range?.startTime || range?.endTime);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave({ startTime: startTime || undefined, endTime: endTime || undefined });
+      setOpen(false);
+    } catch (saveError) {
+      console.error('updatePlaceTime failed:', saveError);
+      setError(describeQueryError(saveError));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function cancel() {
+    setStartTime(range?.startTime ?? '');
+    setEndTime(range?.endTime ?? '');
+    setError(null);
+    setOpen(false);
+  }
+
+  return (
+    <div className="timeline-time">
+      <div className="timeline-time__row">
+        <button
+          type="button"
+          className={`timeline-attachment__toggle${hasContent ? ' timeline-attachment__toggle--active' : ''}`}
+          onClick={() => setOpen((current) => !current)}
+          aria-label={hasContent ? 'Edit time' : 'Add time'}
+          title={hasContent ? 'Edit time' : 'Add time'}
+        >
+          🕐
+        </button>
+        {!open && hasContent ? <span className="timeline-time__label">{formatTimeRange(range)}</span> : null}
+      </div>
+
+      {open ? (
+        <div className="timeline-attachment__panel timeline-time__panel">
+          <label className="timeline-time__field">
+            <span>Start</span>
+            <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+          </label>
+          <label className="timeline-time__field">
+            <span>End</span>
+            <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} />
+          </label>
+          {error ? <small className="place-autocomplete__error">{error}</small> : null}
+          <div className="timeline-attachment__actions">
+            <button type="button" className="secondary-button" onClick={cancel} disabled={saving}>
+              Cancel
+            </button>
+            <button type="button" className="primary-button" onClick={save} disabled={saving}>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -2500,41 +2639,72 @@ function TimelineAttachment({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Only resync from the saved `attachment` while the panel is collapsed. While it's open, the
+  // user may have unsaved local edits (a freshly picked file, a typed note) that only exist here
+  // until Save is clicked -- a background refetch of `lists` (e.g. react-query's
+  // refetchOnWindowFocus firing when the native file-picker dialog closes and the window regains
+  // focus) hands this a new `attachment` object on every such refetch, and blindly resyncing from
+  // it would silently wipe out those unsaved edits before the user ever sees them.
   useEffect(() => {
+    if (open) return;
     setNote(attachment?.note ?? '');
     setFiles(attachment?.files ?? []);
     setPreviewUrls({});
-  }, [attachment]);
+  }, [attachment, open]);
 
   const hasContent = Boolean(attachment?.note?.trim() || attachment?.files?.length);
 
   async function handleFiles(event: ChangeEvent<HTMLInputElement>) {
-    const selected = event.target.files;
+    // `event.target.files` is a *live* FileList tied to the input's current state, not a stable
+    // snapshot -- resetting `.value` right after reading it can clear the same list out from
+    // under an already-taken reference. Copying to a plain array first avoids that entirely.
+    const selectedFiles = Array.from(event.target.files ?? []);
     event.target.value = '';
-    if (!selected || selected.length === 0) {
+    if (selectedFiles.length === 0) {
       return;
     }
 
+    const picked = selectedFiles.map((file) => ({ file, id: crypto.randomUUID() }));
+
+    // Show the mini square the instant a file is picked, using a local blob URL -- this needs no
+    // network round trip, so it can never be blocked by (or hide behind) whatever the actual
+    // upload is doing. `fileDataUrl` starts empty and is filled in per-file once its upload
+    // resolves; a file whose upload fails is removed again rather than left in a broken state.
+    setFiles((current) => [
+      ...current,
+      ...picked.map(({ file, id }) => ({ id, fileName: file.name, fileType: file.type, fileDataUrl: '' })),
+    ]);
+    setPreviewUrls((current) => {
+      const next = { ...current };
+      picked.forEach(({ file, id }) => {
+        next[id] = URL.createObjectURL(file);
+      });
+      return next;
+    });
+
     setUploading(true);
     setError(null);
-    try {
-      const added: AttachmentFile[] = [];
-      const newPreviews: Record<string, string> = {};
+    const failures: string[] = [];
 
-      for (const file of Array.from(selected)) {
-        const { path, previewUrl } = await uploadAttachmentFile(currentUserId, file);
-        const id = crypto.randomUUID();
-        added.push({ id, fileName: file.name, fileType: file.type, fileDataUrl: path });
-        newPreviews[id] = previewUrl;
+    for (const { file, id } of picked) {
+      try {
+        const { path } = await uploadAttachmentFile(currentUserId, file);
+        setFiles((current) => current.map((item) => (item.id === id ? { ...item, fileDataUrl: path } : item)));
+      } catch (uploadError) {
+        console.error('uploadAttachmentFile failed:', uploadError);
+        failures.push(`${file.name}: ${describeQueryError(uploadError)}`);
+        setFiles((current) => current.filter((item) => item.id !== id));
+        setPreviewUrls((current) => {
+          const next = { ...current };
+          delete next[id];
+          return next;
+        });
       }
+    }
 
-      setFiles((current) => [...current, ...added]);
-      setPreviewUrls((current) => ({ ...current, ...newPreviews }));
-    } catch (uploadError) {
-      console.error('uploadAttachmentFile failed:', uploadError);
-      setError(describeQueryError(uploadError));
-    } finally {
-      setUploading(false);
+    setUploading(false);
+    if (failures.length > 0) {
+      setError(failures.join('; '));
     }
   }
 

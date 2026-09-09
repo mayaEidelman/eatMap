@@ -8,7 +8,7 @@ import {
   type TripDayPlaceRow,
   type TripDayRow,
 } from '../db/mappers';
-import type { DraftDay, DraftList, DraftPlace, TripList } from '../../types';
+import type { DraftDay, DraftList, DraftPlace, PlaceTimeRange, TripList } from '../../types';
 
 const ATTACHMENTS_BUCKET = 'attachments';
 
@@ -114,8 +114,17 @@ async function savePlacesAndDays(listId: string, places: DraftPlace[], days: Dra
     .insert(days.map((day, index) => ({ id: day.id, list_id: listId, label: day.label, sort_order: index })));
   if (daysError) throw daysError;
 
+  // Reinsert preserves each place's previously-set time range -- `savePlacesAndDays` fully
+  // replaces trip_day_places on every save (even ones unrelated to time, like editing the title),
+  // so times have to be carried through here or they'd silently disappear on the next unrelated edit.
   const dayPlaceRows = days.flatMap((day) =>
-    day.placeIds.map((placeId, placeIndex) => ({ day_id: day.id, place_id: placeId, sort_order: placeIndex })),
+    day.placeIds.map((placeId, placeIndex) => ({
+      day_id: day.id,
+      place_id: placeId,
+      sort_order: placeIndex,
+      start_time: day.placeTimes?.[placeId]?.startTime || null,
+      end_time: day.placeTimes?.[placeId]?.endTime || null,
+    })),
   );
   if (dayPlaceRows.length > 0) {
     const { error: dayPlacesError } = await supabase.from('trip_day_places').insert(dayPlaceRows);
@@ -167,4 +176,16 @@ export async function updateList(listId: string, draft: DraftList): Promise<void
   if (error) throw error;
 
   await savePlacesAndDays(listId, draft.places, draft.days);
+}
+
+/** Targeted update for a single place's time range -- unlike `updateList`, this doesn't go
+ * through the full delete-and-reinsert of `savePlacesAndDays`, so setting a time from the
+ * timeline view is a quick single-row write rather than a full list resave. */
+export async function updatePlaceTime(dayId: string, placeId: string, range: PlaceTimeRange): Promise<void> {
+  const { error } = await supabase
+    .from('trip_day_places')
+    .update({ start_time: range.startTime || null, end_time: range.endTime || null })
+    .eq('day_id', dayId)
+    .eq('place_id', placeId);
+  if (error) throw error;
 }

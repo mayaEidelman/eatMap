@@ -131,8 +131,14 @@ create table if not exists public.trip_day_places (
   day_id uuid not null references public.trip_days (id) on delete cascade,
   place_id uuid not null unique references public.places (id) on delete cascade,
   sort_order int not null default 0,
+  start_time time,
+  end_time time,
   primary key (day_id, place_id)
 );
+
+-- Safe to re-run against a database that already has this table from before these columns existed.
+alter table public.trip_day_places add column if not exists start_time time;
+alter table public.trip_day_places add column if not exists end_time time;
 
 -- ============================================================================
 -- place_attachments / attachment_files (private, owner-only)

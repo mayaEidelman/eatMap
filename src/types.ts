@@ -28,10 +28,20 @@ export type Place = {
   googlePlaceId?: string;
 };
 
+export type PlaceTimeRange = {
+  /** 24h "HH:MM" (or "HH:MM:SS" as Postgres' `time` type returns it). */
+  startTime?: string;
+  endTime?: string;
+};
+
 export type TripDay = {
   id: string;
   label: string;
   placeIds: string[];
+  /** Optional per-place time range, keyed by placeId. When a place has a startTime, the timeline
+   * view sorts chronologically by it instead of the manual drag order; places without a time keep
+   * their manual order, appended after every timed place. */
+  placeTimes?: Record<string, PlaceTimeRange>;
 };
 
 export type AttachmentFile = {
