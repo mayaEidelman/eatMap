@@ -1126,6 +1126,15 @@ function AppShell() {
               <button
                 className="map-search-float__button icon-button"
                 type="button"
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Show sidebar"
+                title="Show sidebar"
+              >
+                ›
+              </button>
+              <button
+                className="map-search-float__button icon-button"
+                type="button"
                 onClick={() => setMapSearchPopoverOpen((open) => !open)}
                 aria-label="Search places"
                 aria-expanded={mapSearchPopoverOpen}
@@ -1140,14 +1149,11 @@ function AppShell() {
                     <button
                       className="icon-button"
                       type="button"
-                      onClick={() => {
-                        setSidebarOpen(true);
-                        setMapSearchPopoverOpen(false);
-                      }}
-                      aria-label="Show full sidebar"
-                      title="Show full sidebar"
+                      onClick={() => setMapSearchPopoverOpen(false)}
+                      aria-label="Close search"
+                      title="Close search"
                     >
-                      ‹
+                      ×
                     </button>
                   </div>
                   <PlaceAutocomplete

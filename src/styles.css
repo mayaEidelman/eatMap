@@ -1820,6 +1820,8 @@ button.stat-pill {
   top: 18px;
   left: 18px;
   z-index: 10;
+  display: flex;
+  gap: 8px;
 }
 
 .map-search-float__button {
