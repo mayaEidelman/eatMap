@@ -77,9 +77,7 @@ function formatClockTime(value: string | undefined): string {
   const minutes = Number(minutesRaw);
   if (Number.isNaN(hours) || Number.isNaN(minutes)) return value;
 
-  const period = hours >= 12 ? 'PM' : 'AM';
-  const displayHours = hours % 12 === 0 ? 12 : hours % 12;
-  return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 }
 
 function formatTimeRange(range: PlaceTimeRange | undefined): string {
