@@ -2142,9 +2142,8 @@ button.stat-pill {
 }
 
 .trip-place-card {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  gap: 6px;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -2154,6 +2153,12 @@ button.stat-pill {
 
 .trip-place-card:active {
   cursor: grabbing;
+}
+
+.trip-place-card__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .trip-place-card .trip-place-card__name {
@@ -2176,6 +2181,29 @@ button.stat-pill {
   font-size: 1rem;
   line-height: 1;
   padding: 0 2px;
+}
+
+.trip-place-card__times {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 24px;
+  cursor: default;
+}
+
+.trip-place-card__times input[type='time'] {
+  width: 104px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 6px;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 0.78rem;
+  color: var(--ink);
+}
+
+.trip-place-card__times span {
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .trip-plan-unscheduled {
@@ -2233,7 +2261,7 @@ button.stat-pill {
 
 .trip-timeline__item {
   display: grid;
-  grid-template-columns: 28px 1fr;
+  grid-template-columns: 68px 1fr;
   gap: 12px;
 }
 
@@ -2252,16 +2280,32 @@ button.stat-pill {
   color: white;
   font-size: 0.78rem;
   font-weight: 700;
-  background: linear-gradient(135deg, var(--accent-hot), var(--accent-sky));
   flex-shrink: 0;
+}
+
+.trip-timeline__time-badge {
+  min-width: 56px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
 }
 
 .trip-timeline__line {
   flex: 1;
-  width: 2px;
+  width: 3px;
   min-height: 24px;
-  margin-top: 2px;
-  background: var(--border);
+  margin-top: 4px;
+  border-radius: 999px;
+  opacity: 0.35;
 }
 
 .trip-timeline__content {
@@ -2274,53 +2318,6 @@ button.stat-pill {
 
 .trip-timeline__content small {
   color: var(--muted);
-}
-
-.timeline-time {
-  margin-top: 6px;
-}
-
-.timeline-time__row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.timeline-time__label {
-  font-size: 0.8rem;
-  color: var(--muted);
-  font-weight: 700;
-}
-
-.timeline-time__label--readonly {
-  display: block;
-  margin-top: 2px;
-}
-
-.timeline-time__panel {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  max-width: 260px;
-}
-
-.timeline-time__field {
-  display: grid;
-  gap: 4px;
-}
-
-.timeline-time__field span {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: #b45309;
-}
-
-.timeline-time__field input {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 8px 10px;
-  background: white;
-  font-size: 0.86rem;
 }
 
 .timeline-attachment {
@@ -2498,6 +2495,11 @@ button.stat-pill {
   display: grid;
   gap: 6px;
   font-size: 0.9rem;
+}
+
+.trip-plan-view__time {
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .place-category-group {

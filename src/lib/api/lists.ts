@@ -8,7 +8,7 @@ import {
   type TripDayPlaceRow,
   type TripDayRow,
 } from '../db/mappers';
-import type { DraftDay, DraftList, DraftPlace, PlaceTimeRange, TripList } from '../../types';
+import type { DraftDay, DraftList, DraftPlace, TripList } from '../../types';
 
 const ATTACHMENTS_BUCKET = 'attachments';
 
@@ -176,16 +176,4 @@ export async function updateList(listId: string, draft: DraftList): Promise<void
   if (error) throw error;
 
   await savePlacesAndDays(listId, draft.places, draft.days);
-}
-
-/** Targeted update for a single place's time range -- unlike `updateList`, this doesn't go
- * through the full delete-and-reinsert of `savePlacesAndDays`, so setting a time from the
- * timeline view is a quick single-row write rather than a full list resave. */
-export async function updatePlaceTime(dayId: string, placeId: string, range: PlaceTimeRange): Promise<void> {
-  const { error } = await supabase
-    .from('trip_day_places')
-    .update({ start_time: range.startTime || null, end_time: range.endTime || null })
-    .eq('day_id', dayId)
-    .eq('place_id', placeId);
-  if (error) throw error;
 }

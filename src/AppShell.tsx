@@ -431,6 +431,15 @@ function AppShell() {
     }));
   }, []);
 
+  const setDraftPlaceTime = useCallback((dayId: string, placeId: string, range: PlaceTimeRange) => {
+    setDraft((current) => ({
+      ...current,
+      days: current.days.map((tripDay) =>
+        tripDay.id === dayId ? { ...tripDay, placeTimes: { ...tripDay.placeTimes, [placeId]: range } } : tripDay,
+      ),
+    }));
+  }, []);
+
   const exploreLists = useMemo(() => (data ? filterByQuery(data.lists, search) : []), [data, search]);
 
   const accountLists = useMemo(() => (data ? data.lists.filter((list) => list.ownerId === data.currentUserId) : []), [data]);
@@ -682,10 +691,6 @@ function AppShell() {
 
   async function updatePlaceAttachment(placeId: string, attachment: PlaceAttachment | null) {
     await actions.saveAttachment(placeId, attachment);
-  }
-
-  async function updatePlaceTime(dayId: string, placeId: string, range: PlaceTimeRange) {
-    await actions.updatePlaceTime(dayId, placeId, range);
   }
 
   function openCreateList() {
@@ -1584,12 +1589,22 @@ function AppShell() {
                             return null;
                           }
 
+                          const placeTime = tripDay.placeTimes?.[placeId];
+
                           return (
                             <div
                               key={placeId}
                               className="trip-place-card"
                               draggable
-                              onDragStart={(event) => event.dataTransfer.setData('text/plain', placeId)}
+                              onDragStart={(event) => {
+                                // Don't hijack clicks/typing in the time inputs below -- only start
+                                // a drag when the gesture began on the card itself, not a control in it.
+                                if ((event.target as HTMLElement).tagName === 'INPUT') {
+                                  event.preventDefault();
+                                  return;
+                                }
+                                event.dataTransfer.setData('text/plain', placeId);
+                              }}
                               onDragOver={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
@@ -1603,16 +1618,37 @@ function AppShell() {
                                 }
                               }}
                             >
-                              <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span>
-                              <span className="trip-place-card__name">{place.name}</span>
-                              <button
-                                type="button"
-                                className="trip-place-card__remove"
-                                onClick={() => unscheduleDraftPlace(placeId)}
-                                aria-label={`Remove ${place.name} from ${tripDay.label}`}
-                              >
-                                ×
-                              </button>
+                              <div className="trip-place-card__row">
+                                <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span>
+                                <span className="trip-place-card__name">{place.name}</span>
+                                <button
+                                  type="button"
+                                  className="trip-place-card__remove"
+                                  onClick={() => unscheduleDraftPlace(placeId)}
+                                  aria-label={`Remove ${place.name} from ${tripDay.label}`}
+                                >
+                                  ×
+                                </button>
+                              </div>
+                              <div className="trip-place-card__times">
+                                <input
+                                  type="time"
+                                  value={placeTime?.startTime ?? ''}
+                                  onChange={(event) =>
+                                    setDraftPlaceTime(tripDay.id, placeId, { ...placeTime, startTime: event.target.value || undefined })
+                                  }
+                                  aria-label={`Start time for ${place.name}`}
+                                />
+                                <span aria-hidden="true">–</span>
+                                <input
+                                  type="time"
+                                  value={placeTime?.endTime ?? ''}
+                                  onChange={(event) =>
+                                    setDraftPlaceTime(tripDay.id, placeId, { ...placeTime, endTime: event.target.value || undefined })
+                                  }
+                                  aria-label={`End time for ${place.name}`}
+                                />
+                              </div>
                             </div>
                           );
                         })}
@@ -1670,8 +1706,10 @@ function AppShell() {
                           draggable
                           onDragStart={(event) => event.dataTransfer.setData('text/plain', place.id)}
                         >
-                          <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span>
-                          <span className="trip-place-card__name">{place.name}</span>
+                          <div className="trip-place-card__row">
+                            <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span>
+                            <span className="trip-place-card__name">{place.name}</span>
+                          </div>
                         </div>
                       ))}
                     {draft.places.length === 0 ? <p className="trip-day__empty">Add places above first.</p> : null}
@@ -1920,7 +1958,6 @@ function AppShell() {
               attachments={listDetailOwner?.id === currentUser.id ? listDetail.placeAttachments ?? {} : null}
               currentUserId={data.currentUserId}
               onSaveAttachment={(placeId, attachment) => updatePlaceAttachment(placeId, attachment)}
-              onSaveTime={(dayId, placeId, range) => updatePlaceTime(dayId, placeId, range)}
             />
 
             <SavedPlacesView key={`${listDetail.id}-places`} places={listDetail.places} onSelectPlace={setInspectedPlaceId} />
@@ -2419,7 +2456,6 @@ function TripPlanView({
   attachments,
   currentUserId,
   onSaveAttachment,
-  onSaveTime,
 }: {
   days: TripDay[];
   places: Place[];
@@ -2427,7 +2463,6 @@ function TripPlanView({
   attachments: Record<string, PlaceAttachment> | null;
   currentUserId: string;
   onSaveAttachment: (placeId: string, attachment: PlaceAttachment | null) => Promise<void>;
-  onSaveTime: (dayId: string, placeId: string, range: PlaceTimeRange) => Promise<void>;
 }) {
   const [viewMode, setViewMode] = useState<'cards' | 'timeline'>('cards');
 
@@ -2466,13 +2501,17 @@ function TripPlanView({
                 <p className="trip-day__empty">No stops planned</p>
               ) : (
                 <ol>
-                  {tripDay.placeIds.map((placeId) => {
+                  {sortPlaceIdsByTime(tripDay.placeIds, tripDay.placeTimes).map((placeId) => {
                     const place = places.find((item) => item.id === placeId);
-                    return place ? (
+                    if (!place) return null;
+
+                    const timeLabel = formatTimeRange(tripDay.placeTimes?.[placeId]);
+                    return (
                       <li key={placeId}>
                         <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span> {place.name}
+                        {timeLabel ? <span className="trip-plan-view__time"> · {timeLabel}</span> : null}
                       </li>
-                    ) : null;
+                    );
                   })}
                 </ol>
               )}
@@ -2495,25 +2534,27 @@ function TripPlanView({
 
                   const isLast = index === sortedIds.length - 1;
                   const timeRange = tripDay.placeTimes?.[placeId];
+                  const timeLabel = formatTimeRange(timeRange);
+                  const markerColor = LIST_MARKER_COLORS[index % LIST_MARKER_COLORS.length];
                   return (
                     <div key={placeId} className="trip-timeline__item">
                       <div className="trip-timeline__marker">
-                        <span className="trip-timeline__dot">{index + 1}</span>
-                        {!isLast ? <span className="trip-timeline__line" /> : null}
+                        {timeLabel ? (
+                          <span className="trip-timeline__time-badge" style={{ background: markerColor }}>
+                            {timeLabel}
+                          </span>
+                        ) : (
+                          <span className="trip-timeline__dot" style={{ background: markerColor }}>
+                            {index + 1}
+                          </span>
+                        )}
+                        {!isLast ? <span className="trip-timeline__line" style={{ background: markerColor }} /> : null}
                       </div>
                       <div className="trip-timeline__content">
                         <strong>
                           <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span> {place.name}
                         </strong>
                         <small>{place.address}</small>
-                        {isOwner ? (
-                          <TimelineTimeRange
-                            range={timeRange}
-                            onSave={(range) => onSaveTime(tripDay.id, placeId, range)}
-                          />
-                        ) : timeRange ? (
-                          <span className="timeline-time__label timeline-time__label--readonly">{formatTimeRange(timeRange)}</span>
-                        ) : null}
                         {isOwner ? (
                           <TimelineAttachment
                             attachment={attachments?.[placeId]}
@@ -2530,90 +2571,6 @@ function TripPlanView({
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function TimelineTimeRange({
-  range,
-  onSave,
-}: {
-  range: PlaceTimeRange | undefined;
-  onSave: (range: PlaceTimeRange) => Promise<void>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [startTime, setStartTime] = useState(range?.startTime ?? '');
-  const [endTime, setEndTime] = useState(range?.endTime ?? '');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Same "only resync while collapsed" guard as TimelineAttachment -- see the comment there for
-  // why: a background refetch while the panel is open shouldn't clobber an in-progress edit.
-  useEffect(() => {
-    if (open) return;
-    setStartTime(range?.startTime ?? '');
-    setEndTime(range?.endTime ?? '');
-  }, [range, open]);
-
-  const hasContent = Boolean(range?.startTime || range?.endTime);
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      await onSave({ startTime: startTime || undefined, endTime: endTime || undefined });
-      setOpen(false);
-    } catch (saveError) {
-      console.error('updatePlaceTime failed:', saveError);
-      setError(describeQueryError(saveError));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function cancel() {
-    setStartTime(range?.startTime ?? '');
-    setEndTime(range?.endTime ?? '');
-    setError(null);
-    setOpen(false);
-  }
-
-  return (
-    <div className="timeline-time">
-      <div className="timeline-time__row">
-        <button
-          type="button"
-          className={`timeline-attachment__toggle${hasContent ? ' timeline-attachment__toggle--active' : ''}`}
-          onClick={() => setOpen((current) => !current)}
-          aria-label={hasContent ? 'Edit time' : 'Add time'}
-          title={hasContent ? 'Edit time' : 'Add time'}
-        >
-          🕐
-        </button>
-        {!open && hasContent ? <span className="timeline-time__label">{formatTimeRange(range)}</span> : null}
-      </div>
-
-      {open ? (
-        <div className="timeline-attachment__panel timeline-time__panel">
-          <label className="timeline-time__field">
-            <span>Start</span>
-            <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
-          </label>
-          <label className="timeline-time__field">
-            <span>End</span>
-            <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} />
-          </label>
-          {error ? <small className="place-autocomplete__error">{error}</small> : null}
-          <div className="timeline-attachment__actions">
-            <button type="button" className="secondary-button" onClick={cancel} disabled={saving}>
-              Cancel
-            </button>
-            <button type="button" className="primary-button" onClick={save} disabled={saving}>
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
