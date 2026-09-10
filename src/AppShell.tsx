@@ -988,9 +988,8 @@ function AppShell() {
 
   return (
     <div className="app-shell">
-      <header className="topbar panel">
+      <header className="topbar">
         <div className="topbar__brand">
-          <div className="topbar__logo">E</div>
           <div>
             <strong>EatMap</strong>
             <p>{pageLabel}</p>
@@ -1049,7 +1048,18 @@ function AppShell() {
       </header>
 
       {page === 'home' ? (
-        <div className={`map-page page-transition${sidebarOpen ? '' : ' map-page--collapsed'}`}>
+        <div className="map-page page-transition">
+          <MapPanel
+            lists={mapDisplayLists}
+            selectedListId={selectedList?.id ?? myMapLists[0]?.id ?? ''}
+            onSelectList={setSelectedListId}
+            previewPlace={mapSearchPlace}
+            previewPlaceSaved={mapSearchPlaceSaved}
+            onSavePreviewPlace={() => setSaveToListOpen(true)}
+            onDismissPreviewPlace={discardMapSearchPlace}
+            onDiscoverPlace={handleMapPlaceFound}
+          />
+
           {sidebarOpen ? (
             <aside className="map-sidebar panel">
               <div className="map-sidebar__header">
@@ -1166,17 +1176,6 @@ function AppShell() {
               ) : null}
             </div>
           )}
-
-          <MapPanel
-            lists={mapDisplayLists}
-            selectedListId={selectedList?.id ?? myMapLists[0]?.id ?? ''}
-            onSelectList={setSelectedListId}
-            previewPlace={mapSearchPlace}
-            previewPlaceSaved={mapSearchPlaceSaved}
-            onSavePreviewPlace={() => setSaveToListOpen(true)}
-            onDismissPreviewPlace={discardMapSearchPlace}
-            onDiscoverPlace={handleMapPlaceFound}
-          />
         </div>
       ) : null}
 
