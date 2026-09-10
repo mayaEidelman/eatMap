@@ -2299,13 +2299,65 @@ button.stat-pill {
   box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
 }
 
-.trip-timeline__line {
+.trip-timeline__line-wrap {
+  position: relative;
   flex: 1;
-  width: 3px;
-  min-height: 24px;
+  min-height: 64px;
   margin-top: 4px;
+  display: flex;
+  justify-content: center;
+}
+
+.trip-timeline__line {
+  width: 3px;
+  height: 100%;
   border-radius: 999px;
   opacity: 0.35;
+}
+
+.travel-time-chip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.1);
+  white-space: nowrap;
+}
+
+.travel-time-chip__modes {
+  display: flex;
+  gap: 2px;
+}
+
+.travel-time-chip__mode {
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  padding: 1px 3px;
+  font-size: 0.72rem;
+  line-height: 1;
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+
+.travel-time-chip__mode--active {
+  opacity: 1;
+  filter: none;
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.travel-time-chip__duration {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--muted);
 }
 
 .trip-timeline__content {

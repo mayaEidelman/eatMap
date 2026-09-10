@@ -18,6 +18,8 @@ import { fetchPlaceDetails, type PlaceDetails } from './lib/placeDetails';
 import { signInWithGoogle, signInWithMagicLink, signOut as signOutOfSupabase } from './lib/supabaseAuth';
 import { isSupabaseConfigured, supabaseConfigError } from './lib/supabaseClient';
 import { uploadAttachmentFile, uploadPublicMedia } from './lib/storage';
+import { TRAVEL_MODES, type TravelMode } from './lib/travelTime';
+import { useTravelTime } from './hooks/useTravelTime';
 import { emptyDraft } from './mock';
 import { EXPENSE_CATEGORIES, PLACE_CATEGORIES } from './types';
 import type {
@@ -2536,6 +2538,7 @@ function TripPlanView({
                   const timeRange = tripDay.placeTimes?.[placeId];
                   const timeLabel = formatTimeRange(timeRange);
                   const markerColor = LIST_MARKER_COLORS[index % LIST_MARKER_COLORS.length];
+                  const nextPlace = isLast ? null : places.find((item) => item.id === sortedIds[index + 1]) ?? null;
                   return (
                     <div key={placeId} className="trip-timeline__item">
                       <div className="trip-timeline__marker">
@@ -2548,7 +2551,12 @@ function TripPlanView({
                             {index + 1}
                           </span>
                         )}
-                        {!isLast ? <span className="trip-timeline__line" style={{ background: markerColor }} /> : null}
+                        {!isLast ? (
+                          <div className="trip-timeline__line-wrap">
+                            <span className="trip-timeline__line" style={{ background: markerColor }} />
+                            {nextPlace ? <TimelineTravelTime origin={place} destination={nextPlace} /> : null}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="trip-timeline__content">
                         <strong>
@@ -2571,6 +2579,47 @@ function TripPlanView({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+const TRAVEL_MODE_META: { mode: TravelMode; icon: string; label: string }[] = [
+  { mode: 'DRIVING', icon: '🚗', label: 'Driving' },
+  { mode: 'WALKING', icon: '🚶', label: 'Walking' },
+  { mode: 'TRANSIT', icon: '🚌', label: 'Public transit' },
+];
+
+/** Sits on the connecting line between two consecutive timeline stops, showing Google's walk /
+ * drive / transit time between them -- the same figure Google Maps shows for directions between
+ * two pins, via the Distance Matrix API. Only the selected mode is fetched (not all three up
+ * front) to keep this to one billed request per connector per mode actually looked at. */
+function TimelineTravelTime({ origin, destination }: { origin: Place; destination: Place }) {
+  const [mode, setMode] = useState<TravelMode>('DRIVING');
+  const { result, isLoading, error } = useTravelTime(
+    { lat: origin.lat, lng: origin.lng },
+    { lat: destination.lat, lng: destination.lng },
+    mode,
+  );
+
+  const durationLabel = isLoading ? '…' : error ? 'unavailable' : result ? result.durationText : 'no route';
+
+  return (
+    <div className="travel-time-chip" title={`${TRAVEL_MODE_META.find((m) => m.mode === mode)?.label} time between these stops`}>
+      <div className="travel-time-chip__modes">
+        {TRAVEL_MODE_META.map(({ mode: candidateMode, icon, label }) => (
+          <button
+            key={candidateMode}
+            type="button"
+            className={`travel-time-chip__mode${mode === candidateMode ? ' travel-time-chip__mode--active' : ''}`}
+            onClick={() => setMode(candidateMode)}
+            aria-label={label}
+            title={label}
+          >
+            {icon}
+          </button>
+        ))}
+      </div>
+      <span className="travel-time-chip__duration">{durationLabel}</span>
     </div>
   );
 }
