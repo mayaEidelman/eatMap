@@ -208,6 +208,9 @@ export function MapPanel({
         mapInstance.current = new googleApi.maps.Map(mapRef.current, {
           center: defaultCenter,
           zoom: defaultZoom,
+          // Below ~zoom 2, Google tiles the whole world side-by-side repeatedly, which reads as
+          // a rendering glitch rather than "zoomed out" -- floor it just above that point.
+          minZoom: 2,
           disableDefaultUI: true,
           zoomControl: true,
           clickableIcons: true,
