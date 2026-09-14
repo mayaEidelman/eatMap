@@ -1,4 +1,5 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { Compass, DollarSign, Map as MapIcon, MessageCircle, User as UserIcon } from 'lucide-react';
 import { ImportPlacesModal } from './components/ImportPlacesModal';
 import { MapPanel } from './components/MapPanel';
 import { PlaceAutocomplete, type PlaceSearchResult } from './components/PlaceAutocomplete';
@@ -50,6 +51,17 @@ function getScheduledPlaceIds(list: TripList): Set<string> {
   const ids = new Set<string>();
   list.days.forEach((day) => day.placeIds.forEach((placeId) => ids.add(placeId)));
   return ids;
+}
+
+/** The accommodation covering a given calendar day, if any -- a hotel place whose
+ * checkIn/checkOut range includes that date. Only possible when the day has a real date (i.e. its
+ * list's days were generated from a start/end date) and the hotel has both dates set. Checkout day
+ * itself still counts as covered, since that's still the night before you leave. */
+function findHotelForDay(places: Place[], date: string | undefined): Place | undefined {
+  if (!date) return undefined;
+  return places.find(
+    (place) => place.category === 'hotel' && place.checkIn && place.checkOut && date >= place.checkIn && date <= place.checkOut,
+  );
 }
 
 /** Places with a startTime sort chronologically; places without one keep their manual drag order,
@@ -183,6 +195,15 @@ const MAX_GENERATED_DAYS = 60;
 /** Builds one DraftDay per calendar day in [startDate, endDate], labeled with its date. Dates
  * are parsed as local midnight (not UTC) so the generated label always matches the date the
  * user actually picked, regardless of timezone. */
+/** "YYYY-MM-DD" from a Date's *local* fields -- `.toISOString()` converts to UTC first, which can
+ * silently shift the date by one depending on the browser's timezone. */
+function toLocalIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function buildDaysFromDateRange(startDate: string, endDate: string): DraftDay[] {
   const start = new Date(`${startDate}T00:00:00`);
   const end = new Date(`${endDate}T00:00:00`);
@@ -199,6 +220,7 @@ function buildDaysFromDateRange(startDate: string, endDate: string): DraftDay[] 
       id: crypto.randomUUID(),
       label: `Day ${index} · ${cursor.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}`,
       placeIds: [],
+      date: toLocalIsoDate(cursor),
     });
     cursor.setDate(cursor.getDate() + 1);
     index += 1;
@@ -378,6 +400,13 @@ function AppShell() {
     setDraft((current) => ({
       ...current,
       places: current.places.map((place) => (place.id === placeId ? { ...place, category } : place)),
+    }));
+  }, []);
+
+  const updateDraftPlaceStay = useCallback((placeId: string, patch: { checkIn?: string; checkOut?: string }) => {
+    setDraft((current) => ({
+      ...current,
+      places: current.places.map((place) => (place.id === placeId ? { ...place, ...patch } : place)),
     }));
   }, []);
 
@@ -759,7 +788,8 @@ function AppShell() {
     try {
       await actions.togglePlaceInList(list.id, mapSearchPlace, existing?.id);
     } catch (error) {
-      setSaveToListError(error instanceof Error ? error.message : 'Could not update this list. Please try again.');
+      console.error('togglePlaceInList failed:', error);
+      setSaveToListError(describeQueryError(error));
     } finally {
       setSaveToListSubmitting(false);
     }
@@ -857,7 +887,8 @@ function AppShell() {
     try {
       resultId = await actions.saveList(listFormMode, editingListId, preparedDraft);
     } catch (error) {
-      setListFormError(error instanceof Error ? error.message : 'Could not save this list. Please try again.');
+      console.error('saveList failed:', error);
+      setListFormError(describeQueryError(error));
       return;
     } finally {
       setListFormSubmitting(false);
@@ -1011,7 +1042,7 @@ function AppShell() {
             aria-label="Map"
             title="Map"
           >
-            <span aria-hidden="true">🗺️</span>
+            <MapIcon aria-hidden="true" size={19} strokeWidth={1.75} />
           </button>
           <button
             className={`nav-tab${page === 'explore' ? ' nav-tab--active' : ''}`}
@@ -1020,7 +1051,7 @@ function AppShell() {
             aria-label="Explore"
             title="Explore"
           >
-            <span aria-hidden="true">🧭</span>
+            <Compass aria-hidden="true" size={19} strokeWidth={1.75} />
           </button>
           <button
             className={`nav-tab${page === 'dm' ? ' nav-tab--active' : ''}`}
@@ -1029,7 +1060,7 @@ function AppShell() {
             aria-label="Messages"
             title="Messages"
           >
-            <span aria-hidden="true">💬</span>
+            <MessageCircle aria-hidden="true" size={19} strokeWidth={1.75} />
           </button>
           <button
             className={`nav-tab${page === 'expenses' ? ' nav-tab--active' : ''}`}
@@ -1038,7 +1069,7 @@ function AppShell() {
             aria-label="Expenses"
             title="Expenses"
           >
-            <span aria-hidden="true">💵</span>
+            <DollarSign aria-hidden="true" size={19} strokeWidth={1.75} />
             {pendingExpenseInvites.length > 0 ? <span className="nav-tab__badge">{pendingExpenseInvites.length}</span> : null}
           </button>
           <button
@@ -1048,7 +1079,7 @@ function AppShell() {
             aria-label="Account"
             title="Account"
           >
-            <span aria-hidden="true">👤</span>
+            <UserIcon aria-hidden="true" size={19} strokeWidth={1.75} />
           </button>
         </nav>
 
@@ -1718,6 +1749,29 @@ function AppShell() {
                       <button type="button" className="icon-button" onClick={() => removeDraftPlace(place.id)} aria-label={`Remove ${place.name}`}>
                         ×
                       </button>
+                      {place.category === 'hotel' ? (
+                        <div className="draft-place__stay">
+                          <label>
+                            <span>Check-in</span>
+                            <input
+                              type="date"
+                              value={place.checkIn ?? ''}
+                              onChange={(event) => updateDraftPlaceStay(place.id, { checkIn: event.target.value || undefined })}
+                              aria-label={`Check-in date for ${place.name}`}
+                            />
+                          </label>
+                          <label>
+                            <span>Check-out</span>
+                            <input
+                              type="date"
+                              value={place.checkOut ?? ''}
+                              min={place.checkIn}
+                              onChange={(event) => updateDraftPlaceStay(place.id, { checkOut: event.target.value || undefined })}
+                              aria-label={`Check-out date for ${place.name}`}
+                            />
+                          </label>
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                   {draft.places.length === 0 ? <p className="draft-places__empty">Search above to pin real places from Google Maps.</p> : null}
@@ -2522,13 +2576,26 @@ function TripPlanView({
         </div>
       ) : (
         <div className="trip-timeline">
-          {days.map((tripDay) => (
+          {days.map((tripDay) => {
+            const sortedPlaceIds = sortPlaceIdsByTime(tripDay.placeIds, tripDay.placeTimes);
+            const hotel = findHotelForDay(places, tripDay.date);
+            const firstPlace = sortedPlaceIds.length > 0 ? places.find((item) => item.id === sortedPlaceIds[0]) ?? null : null;
+
+            return (
             <div key={tripDay.id} className="trip-timeline__day">
               <div className="trip-timeline__day-label">{tripDay.label}</div>
+              {hotel ? (
+                <div className="trip-timeline__hotel-banner">
+                  <span className="trip-timeline__hotel-name">
+                    <span aria-hidden="true">🏨</span> Staying at {hotel.name}
+                  </span>
+                  {firstPlace && firstPlace.id !== hotel.id ? <TimelineTravelTime origin={hotel} destination={firstPlace} /> : null}
+                </div>
+              ) : null}
               {tripDay.placeIds.length === 0 ? (
                 <p className="trip-day__empty">No stops planned</p>
               ) : (
-                sortPlaceIdsByTime(tripDay.placeIds, tripDay.placeTimes).map((placeId, index, sortedIds) => {
+                sortedPlaceIds.map((placeId, index, sortedIds) => {
                   const place = places.find((item) => item.id === placeId);
                   if (!place) {
                     return null;
@@ -2576,7 +2643,8 @@ function TripPlanView({
                 })
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

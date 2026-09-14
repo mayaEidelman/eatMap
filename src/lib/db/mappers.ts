@@ -42,6 +42,8 @@ export type PlaceRow = {
   lng: number;
   category: string;
   google_place_id: string | null;
+  check_in: string | null;
+  check_out: string | null;
 };
 
 export type TripDayRow = {
@@ -49,6 +51,7 @@ export type TripDayRow = {
   list_id: string;
   label: string;
   sort_order: number;
+  date: string | null;
 };
 
 export type TripDayPlaceRow = {
@@ -126,6 +129,8 @@ export function mapPlaceRow(row: PlaceRow): Place {
     lng: row.lng,
     category: row.category as PlaceCategory,
     googlePlaceId: row.google_place_id ?? undefined,
+    checkIn: row.check_in ?? undefined,
+    checkOut: row.check_out ?? undefined,
   };
 }
 
@@ -161,6 +166,7 @@ export function composeTripList(
         label: dayRow.label,
         placeIds: dayPlaces.map((dayPlace) => dayPlace.place_id),
         placeTimes: Object.keys(placeTimes).length > 0 ? placeTimes : undefined,
+        date: dayRow.date ?? undefined,
       };
     });
 

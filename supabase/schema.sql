@@ -110,11 +110,18 @@ create table if not exists public.places (
   lng double precision not null,
   category text not null default 'other'
     check (category in ('food', 'attraction', 'hotel', 'cafe', 'shopping', 'nature', 'nightlife', 'other')),
-  google_place_id text
+  google_place_id text,
+  -- Only meaningful for category = 'hotel': which nights of the trip this accommodation covers,
+  -- so the timeline can show "staying at X" on the right days and compute the distance from the
+  -- hotel to that day's first stop.
+  check_in date,
+  check_out date
 );
 
--- Safe to re-run against a database that already has this table from before this column existed.
+-- Safe to re-run against a database that already has this table from before these columns existed.
 alter table public.places add column if not exists google_place_id text;
+alter table public.places add column if not exists check_in date;
+alter table public.places add column if not exists check_out date;
 
 create index if not exists places_list_id_idx on public.places (list_id);
 
@@ -122,8 +129,15 @@ create table if not exists public.trip_days (
   id uuid primary key default gen_random_uuid(),
   list_id uuid not null references public.lists (id) on delete cascade,
   label text not null,
-  sort_order int not null default 0
+  sort_order int not null default 0,
+  -- Only set when days were generated from the list's start/end date -- lets a hotel's
+  -- check-in/check-out range be matched against a specific day. Manually-added days (not
+  -- generated from a date range) simply have no date and never match a hotel.
+  date date
 );
+
+-- Safe to re-run against a database that already has this table from before this column existed.
+alter table public.trip_days add column if not exists date date;
 
 create index if not exists trip_days_list_id_idx on public.trip_days (list_id);
 

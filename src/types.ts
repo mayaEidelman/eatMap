@@ -26,6 +26,10 @@ export type Place = {
    * rich Google details (photos, rating, hours) on click instead of just the bare pin info.
    * Absent for places added via CSV/paste import, which have no Google place behind them. */
   googlePlaceId?: string;
+  /** Only meaningful when category is 'hotel' -- ISO "YYYY-MM-DD". Which nights of the trip this
+   * accommodation covers, so the timeline can show it on the right days. */
+  checkIn?: string;
+  checkOut?: string;
 };
 
 export type PlaceTimeRange = {
@@ -42,6 +46,9 @@ export type TripDay = {
    * view sorts chronologically by it instead of the manual drag order; places without a time keep
    * their manual order, appended after every timed place. */
   placeTimes?: Record<string, PlaceTimeRange>;
+  /** ISO "YYYY-MM-DD" -- only set when days were generated from the list's start/end date. Lets a
+   * hotel's checkIn/checkOut range be matched against this specific day. */
+  date?: string;
 };
 
 export type AttachmentFile = {
