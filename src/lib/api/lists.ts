@@ -156,6 +156,32 @@ export async function createList(ownerId: string, draft: DraftList): Promise<str
   return listId;
 }
 
+/** Toggling a place's membership in a list (the map's "Save to list" popup) used to go through
+ * `updateList`/`savePlacesAndDays` -- a whole-list resave that upserts every place, then deletes
+ * and reinserts every trip_day and trip_day_place, regardless of the fact that only one place's
+ * membership actually changed. That's up to ~7 sequential writes for what's really a single-row
+ * change, which is what made marking a list feel slow. These do only the one write that's
+ * actually needed; `removePlaceFromList` doesn't need to touch trip_day_places or
+ * place_attachments at all, since both reference places with `on delete cascade`. */
+export async function addPlaceToList(listId: string, place: DraftPlace): Promise<void> {
+  const { error } = await supabase.from('places').insert({
+    id: place.id,
+    list_id: listId,
+    name: place.name,
+    address: place.address,
+    lat: place.lat,
+    lng: place.lng,
+    category: place.category,
+    google_place_id: place.googlePlaceId ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function removePlaceFromList(placeId: string): Promise<void> {
+  const { error } = await supabase.from('places').delete().eq('id', placeId);
+  if (error) throw error;
+}
+
 export async function updateList(listId: string, draft: DraftList): Promise<void> {
   const { error } = await supabase
     .from('lists')

@@ -59,7 +59,6 @@ function starString(rating: number): string {
 type PlaceCardDetails = {
   name: string;
   address: string;
-  subtitle?: string;
   rating?: number;
   userRatingsTotal?: number;
   priceLevel?: number;
@@ -79,8 +78,6 @@ function buildPlaceCardHtml(details: PlaceCardDetails, saveButtonId?: string, sa
           ${details.photoUrls.map((url) => `<img class="map-popup__photo" src="${escapeHtml(url)}" alt="" />`).join('')}
         </div>`
       : '';
-
-  const subtitleHtml = details.subtitle ? `<span>${escapeHtml(details.subtitle)}</span>` : '';
 
   const ratingHtml = details.rating
     ? `<div class="map-popup__meta">
@@ -142,7 +139,6 @@ function buildPlaceCardHtml(details: PlaceCardDetails, saveButtonId?: string, sa
         <strong>${escapeHtml(details.name)}</strong>
         ${saveButtonHtml}
       </div>
-      ${subtitleHtml}
       ${ratingHtml}
       <p>${escapeHtml(details.address)}</p>
       ${openNowHtml}
@@ -320,8 +316,7 @@ export function MapPanel({
         marker.addListener('click', () => {
           onSelectList(list.id);
 
-          const subtitle = `${list.title} · ${list.location}, ${list.country}`;
-          infoWindow.current?.setContent(buildPlaceCardHtml({ name: placeItem.name, address: placeItem.address, subtitle }));
+          infoWindow.current?.setContent(buildPlaceCardHtml({ name: placeItem.name, address: placeItem.address }));
           infoWindow.current?.open({ map, anchor: marker });
 
           const requestId = ++openRequestId.current;
@@ -336,7 +331,6 @@ export function MapPanel({
                 buildPlaceCardHtml({
                   name: placeItem.name,
                   address: placeItem.address,
-                  subtitle,
                   ...details,
                 }),
               );

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
 :root {
   --bg: #f6f1e8;
@@ -88,7 +88,6 @@ button {
 
 .auth-screen__copy h1 {
   margin: 8px 0 0;
-  font-family: 'Fraunces', serif;
   font-size: clamp(2.2rem, 4vw, 4.2rem);
   line-height: 0.95;
 }
@@ -227,14 +226,14 @@ button {
 
 .topbar__brand strong {
   display: block;
-  font-family: 'Fraunces', serif;
-  font-size: 1.25rem;
-}
-
-.topbar__brand p {
-  margin: 2px 0 0;
-  color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 1.35rem;
+  color: var(--ink);
+  /* Same trick as the "Google Maps" wordmark floating over its own map: a white halo behind the
+     letters (via a stroke painted before the fill, plus a soft shadow for depth) keeps this
+     legible over both light and dark map tiles instead of disappearing into the background. */
+  -webkit-text-stroke: 3px rgba(255, 255, 255, 0.95);
+  paint-order: stroke fill;
+  text-shadow: 0 2px 10px rgba(15, 23, 42, 0.25);
 }
 
 .topbar__nav {
@@ -655,10 +654,6 @@ button {
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 14px 16px;
-}
-
-.modal h3 {
-  font-family: 'Fraunces', serif;
 }
 
 .demo-account {
@@ -1107,6 +1102,10 @@ button.stat-pill {
   border-radius: 28px;
   padding: 22px;
   background: rgba(255, 255, 255, 0.98);
+}
+
+.save-to-list-modal {
+  width: min(420px, 100%);
 }
 
 .form-grid {
@@ -2010,7 +2009,6 @@ button.stat-pill {
 
 .list-detail-modal__hero h3 {
   margin: 8px 0 4px;
-  font-family: 'Fraunces', serif;
   font-size: 2rem;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
 }
@@ -2155,6 +2153,24 @@ button.stat-pill {
   font-size: 0.82rem;
 }
 
+.trip-day__search .place-autocomplete {
+  gap: 4px;
+}
+
+.trip-day__search .place-autocomplete span {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.trip-day__search .place-autocomplete input {
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-size: 0.82rem;
+}
+
 .trip-place-card {
   display: grid;
   gap: 6px;
@@ -2270,7 +2286,6 @@ button.stat-pill {
 .trip-timeline__day-label {
   margin-bottom: 8px;
   font-weight: 700;
-  font-family: 'Fraunces', serif;
 }
 
 .trip-timeline__item {
@@ -2632,7 +2647,6 @@ button.stat-pill {
 
 .profile-view__header h2 {
   margin: 0;
-  font-family: 'Fraunces', serif;
 }
 
 .profile-view__header p {

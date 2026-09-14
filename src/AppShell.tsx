@@ -424,6 +424,27 @@ function AppShell() {
     });
   }, []);
 
+  /** Searching a place directly into a day (rather than via the top "Add a place" box) does both
+   * halves at once: saves it to the list's places if it's genuinely new -- reusing the existing
+   * entry instead of creating a duplicate if the same place was already saved -- and schedules
+   * that place into this specific day. */
+  const addSearchedPlaceToDay = useCallback((dayId: string, place: DraftPlace) => {
+    setDraft((current) => {
+      const existing = findDuplicatePlace(current.places, place);
+      const resolvedPlace = existing ?? place;
+      const places = existing ? current.places : [...current.places, place];
+
+      const days = current.days.map((tripDay) => {
+        if (tripDay.id !== dayId || tripDay.placeIds.includes(resolvedPlace.id)) {
+          return tripDay;
+        }
+        return { ...tripDay, placeIds: [...tripDay.placeIds, resolvedPlace.id] };
+      });
+
+      return { ...current, places, days };
+    });
+  }, []);
+
   const unscheduleDraftPlace = useCallback((placeId: string) => {
     setDraft((current) => ({
       ...current,
@@ -736,15 +757,7 @@ function AppShell() {
     setSaveToListSubmitting(true);
     setSaveToListError(null);
     try {
-      const updatedDraft: DraftList = existing
-        ? {
-            ...buildListDraft(list),
-            places: list.places.filter((place) => place.id !== existing.id),
-            days: list.days.map((day) => ({ ...day, placeIds: day.placeIds.filter((placeId) => placeId !== existing.id) })),
-          }
-        : { ...buildListDraft(list), places: [...list.places, mapSearchPlace] };
-
-      await actions.saveList('edit', list.id, updatedDraft);
+      await actions.togglePlaceInList(list.id, mapSearchPlace, existing?.id);
     } catch (error) {
       setSaveToListError(error instanceof Error ? error.message : 'Could not update this list. Please try again.');
     } finally {
@@ -831,8 +844,8 @@ function AppShell() {
     event.preventDefault();
     setListFormError(null);
 
-    if (!draft.title.trim() || !draft.location.trim()) {
-      setListFormError('Title and city are required.');
+    if (!draft.title.trim()) {
+      setListFormError('Title is required.');
       return;
     }
 
@@ -983,17 +996,11 @@ function AppShell() {
     }
   }
 
-  const pageLabel =
-    page === 'home' ? 'Map' : page === 'explore' ? 'Explore' : page === 'dm' ? 'Messages' : page === 'expenses' ? 'Expenses' : 'Account';
-
   return (
     <div className="app-shell">
       <header className="topbar">
         <div className="topbar__brand">
-          <div>
-            <strong>EatMap</strong>
-            <p>{pageLabel}</p>
-          </div>
+          <strong>EatMap</strong>
         </div>
 
         <nav className="topbar__nav" aria-label="Main navigation">
@@ -1421,16 +1428,8 @@ function AppShell() {
                 <input value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} required />
               </label>
               <label>
-                <span>City</span>
-                <input value={draft.location} onChange={(event) => setDraft((current) => ({ ...current, location: event.target.value }))} required />
-              </label>
-              <label>
                 <span>Country</span>
                 <input value={draft.country} onChange={(event) => setDraft((current) => ({ ...current, country: event.target.value }))} />
-              </label>
-              <label>
-                <span>Vibe</span>
-                <input value={draft.vibe} onChange={(event) => setDraft((current) => ({ ...current, vibe: event.target.value }))} />
               </label>
 
               <div className="form-grid__full color-picker">
@@ -1474,42 +1473,6 @@ function AppShell() {
                   onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
                 />
               </label>
-
-              <div className="form-grid__full draft-places">
-                <div className="draft-places__heading">
-                  <span>Saved places ({draft.places.length})</span>
-                  <button type="button" className="secondary-button" onClick={() => setImportPlacesOpen(true)}>
-                    Import from Google Maps
-                  </button>
-                </div>
-                <PlaceAutocomplete onAdd={addDraftPlace} />
-                <div className="draft-places__list">
-                  {draft.places.map((place) => (
-                    <div key={place.id} className="draft-place">
-                      <div>
-                        <strong>{place.name}</strong>
-                        <small>{place.address}</small>
-                      </div>
-                      <select
-                        className="draft-place__category"
-                        value={place.category}
-                        onChange={(event) => updateDraftPlaceCategory(place.id, event.target.value as PlaceCategory)}
-                        aria-label={`Category for ${place.name}`}
-                      >
-                        {PLACE_CATEGORIES.map((category) => (
-                          <option key={category} value={category}>
-                            {CATEGORY_META[category].icon} {CATEGORY_META[category].label}
-                          </option>
-                        ))}
-                      </select>
-                      <button type="button" className="icon-button" onClick={() => removeDraftPlace(place.id)} aria-label={`Remove ${place.name}`}>
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                  {draft.places.length === 0 ? <p className="draft-places__empty">Search above to pin real places from Google Maps.</p> : null}
-                </div>
-              </div>
 
               <div className="form-grid__full trip-plan-editor">
                 <div className="section-heading">
@@ -1659,6 +1622,9 @@ function AppShell() {
                         })}
                         {tripDay.placeIds.length === 0 ? <p className="trip-day__empty">Drag a place here</p> : null}
                       </div>
+                      <div className="trip-day__search">
+                        <PlaceAutocomplete onAdd={(place) => addSearchedPlaceToDay(tripDay.id, place)} />
+                      </div>
                       <select
                         className="trip-day__add"
                         value=""
@@ -1722,6 +1688,42 @@ function AppShell() {
                 </div>
               </div>
 
+              <div className="form-grid__full draft-places">
+                <div className="draft-places__heading">
+                  <span>Saved places ({draft.places.length})</span>
+                  <button type="button" className="secondary-button" onClick={() => setImportPlacesOpen(true)}>
+                    Import from Google Maps
+                  </button>
+                </div>
+                <PlaceAutocomplete onAdd={addDraftPlace} />
+                <div className="draft-places__list">
+                  {draft.places.map((place) => (
+                    <div key={place.id} className="draft-place">
+                      <div>
+                        <strong>{place.name}</strong>
+                        <small>{place.address}</small>
+                      </div>
+                      <select
+                        className="draft-place__category"
+                        value={place.category}
+                        onChange={(event) => updateDraftPlaceCategory(place.id, event.target.value as PlaceCategory)}
+                        aria-label={`Category for ${place.name}`}
+                      >
+                        {PLACE_CATEGORIES.map((category) => (
+                          <option key={category} value={category}>
+                            {CATEGORY_META[category].icon} {CATEGORY_META[category].label}
+                          </option>
+                        ))}
+                      </select>
+                      <button type="button" className="icon-button" onClick={() => removeDraftPlace(place.id)} aria-label={`Remove ${place.name}`}>
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  {draft.places.length === 0 ? <p className="draft-places__empty">Search above to pin real places from Google Maps.</p> : null}
+                </div>
+              </div>
+
               <label>
                 <span>Season</span>
                 <select value={draft.season} onChange={(event) => setDraft((current) => ({ ...current, season: event.target.value }))}>
@@ -1760,9 +1762,9 @@ function AppShell() {
 
       {saveToListOpen && mapSearchPlace ? (
         <div className="modal-backdrop" role="presentation" onClick={() => setSaveToListOpen(false)}>
-          <div className="modal panel" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+          <div className="modal panel save-to-list-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="section-heading">
-              <h3>Save "{mapSearchPlace.name}" to a list</h3>
+              <h3>Save to list</h3>
               <button className="icon-button" type="button" onClick={() => setSaveToListOpen(false)}>
                 ×
               </button>
@@ -1780,12 +1782,7 @@ function AppShell() {
                     aria-pressed={savedHere}
                   >
                     <img src={list.coverImage} alt="" className="account-list-sidebar__thumb" />
-                    <div>
-                      <strong>{list.title}</strong>
-                      <span>
-                        {list.location}, {list.country}
-                      </span>
-                    </div>
+                    <strong>{list.title}</strong>
                     <span className={`save-to-list-item__check${savedHere ? ' save-to-list-item__check--active' : ''}`} aria-hidden="true">
                       {savedHere ? '✓' : ''}
                     </span>
@@ -3102,10 +3099,7 @@ function SidebarListItem({
       <div className="account-list-sidebar__row">
         <button className="account-list-sidebar__hit" type="button" onClick={onSelect}>
           <img src={list.coverImage} alt="" className="account-list-sidebar__thumb" />
-          <div>
-            <strong>{list.title}</strong>
-            <span>{list.location}, {list.country}</span>
-          </div>
+          <strong>{list.title}</strong>
         </button>
         <button
           className={`icon-button${timelineOpen ? ' icon-button--active' : ''}`}
