@@ -2320,25 +2320,6 @@ button.stat-pill {
   font-weight: 700;
 }
 
-.trip-timeline__hotel-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 14px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: rgba(207, 127, 149, 0.14);
-  border: 1px solid rgba(207, 127, 149, 0.3);
-}
-
-.trip-timeline__hotel-name {
-  font-weight: 700;
-  font-size: 0.86rem;
-  color: var(--accent-hot);
-}
-
 .trip-timeline__item {
   display: grid;
   grid-template-columns: 68px 1fr;
@@ -2361,6 +2342,16 @@ button.stat-pill {
   font-size: 0.78rem;
   font-weight: 700;
   flex-shrink: 0;
+}
+
+.trip-timeline__dot--hotel {
+  background: var(--accent-hot);
+  font-size: 0.9rem;
+}
+
+.trip-timeline__line--hotel {
+  background: var(--accent-hot);
+  opacity: 0.35;
 }
 
 .trip-timeline__time-badge {
@@ -2627,6 +2618,28 @@ button.stat-pill {
   display: grid;
   gap: 6px;
   font-size: 0.9rem;
+}
+
+.trip-plan-view__hotel {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(207, 127, 149, 0.14);
+  border: 1px solid rgba(207, 127, 149, 0.3);
+  color: var(--accent-hot);
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.trip-plan-view__hotel--switch {
+  background: rgba(74, 74, 74, 0.08);
+  border: 1px dashed var(--accent-hot);
+}
+
+.trip-plan-view__hotel--checkout {
+  background: rgba(74, 74, 74, 0.06);
+  border: 1px dashed var(--border);
+  color: var(--muted);
 }
 
 .trip-plan-view__time {

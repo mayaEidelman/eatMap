@@ -57,11 +57,35 @@ function getScheduledPlaceIds(list: TripList): Set<string> {
  * checkIn/checkOut range includes that date. Only possible when the day has a real date (i.e. its
  * list's days were generated from a start/end date) and the hotel has both dates set. Checkout day
  * itself still counts as covered, since that's still the night before you leave. */
-function findHotelForDay(places: Place[], date: string | undefined): Place | undefined {
+type HotelForDay =
+  | { kind: 'single'; hotel: Place }
+  | { kind: 'switch'; from: Place; to: Place }
+  | { kind: 'checkout'; hotel: Place };
+
+/** A "switch" day is one where a hotel's checkOut and a *different* hotel's checkIn both land on
+ * the same date -- checking out of one place and into another the same day. That's detected first
+ * so it doesn't just silently resolve to whichever hotel `.find()` happens to hit first; only once
+ * that's ruled out does this fall back to "which single hotel covers this date." */
+function findHotelForDay(places: Place[], date: string | undefined): HotelForDay | undefined {
   if (!date) return undefined;
-  return places.find(
-    (place) => place.category === 'hotel' && place.checkIn && place.checkOut && date >= place.checkIn && date <= place.checkOut,
-  );
+
+  const hotels = places.filter((place) => place.category === 'hotel' && place.checkIn && place.checkOut);
+  const checkingOut = hotels.find((place) => place.checkOut === date);
+  const checkingIn = hotels.find((place) => place.checkIn === date && place.id !== checkingOut?.id);
+
+  if (checkingOut && checkingIn) {
+    return { kind: 'switch', from: checkingOut, to: checkingIn };
+  }
+
+  // Checking out with nowhere new to check into that same day (end of trip, or a gap before the
+  // next hotel) -- worth flagging on its own rather than quietly reading as just "staying" through
+  // the day you're actually packing up and leaving.
+  if (checkingOut) {
+    return { kind: 'checkout', hotel: checkingOut };
+  }
+
+  const covering = hotels.find((place) => date >= place.checkIn! && date <= place.checkOut!);
+  return covering ? { kind: 'single', hotel: covering } : undefined;
 }
 
 /** Places with a startTime sort chronologically; places without one keep their manual drag order,
@@ -316,6 +340,7 @@ function AppShell() {
   const [listFormSubmitting, setListFormSubmitting] = useState(false);
   const [profileDraft, setProfileDraft] = useState<ProfileDraft>(EMPTY_PROFILE_DRAFT);
   const [importPlacesOpen, setImportPlacesOpen] = useState(false);
+  const [collapsedDraftCategories, setCollapsedDraftCategories] = useState<Set<PlaceCategory>>(new Set());
   const [mapSearchPlace, setMapSearchPlace] = useState<PlaceSearchResult | null>(null);
   const [saveToListOpen, setSaveToListOpen] = useState(false);
   const [saveToListError, setSaveToListError] = useState<string | null>(null);
@@ -409,6 +434,18 @@ function AppShell() {
       places: current.places.map((place) => (place.id === placeId ? { ...place, ...patch } : place)),
     }));
   }, []);
+
+  function toggleDraftCategory(category: PlaceCategory) {
+    setCollapsedDraftCategories((current) => {
+      const next = new Set(current);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  }
 
   const addDraftDay = useCallback(() => {
     setDraft((current) => ({
@@ -1728,52 +1765,79 @@ function AppShell() {
                 </div>
                 <PlaceAutocomplete onAdd={addDraftPlace} />
                 <div className="draft-places__list">
-                  {draft.places.map((place) => (
-                    <div key={place.id} className="draft-place">
-                      <div>
-                        <strong>{place.name}</strong>
-                        <small>{place.address}</small>
+                  {groupPlacesByCategory(draft.places).map((group) => {
+                    const collapsed = collapsedDraftCategories.has(group.category);
+                    return (
+                      <div key={group.category} className="place-category-group">
+                        <button
+                          type="button"
+                          className="collapsible-header place-category-group__heading"
+                          onClick={() => toggleDraftCategory(group.category)}
+                        >
+                          <span aria-hidden="true">{CATEGORY_META[group.category].icon}</span>
+                          <span className="place-category-group__label">
+                            {CATEGORY_META[group.category].label} ({group.places.length})
+                          </span>
+                          <span className={`collapsible-chevron${collapsed ? ' collapsible-chevron--collapsed' : ''}`} aria-hidden="true">
+                            ⌄
+                          </span>
+                        </button>
+                        {!collapsed
+                          ? group.places.map((place) => (
+                              <div key={place.id} className="draft-place">
+                                <div>
+                                  <strong>{place.name}</strong>
+                                  <small>{place.address}</small>
+                                </div>
+                                <select
+                                  className="draft-place__category"
+                                  value={place.category}
+                                  onChange={(event) => updateDraftPlaceCategory(place.id, event.target.value as PlaceCategory)}
+                                  aria-label={`Category for ${place.name}`}
+                                >
+                                  {PLACE_CATEGORIES.map((category) => (
+                                    <option key={category} value={category}>
+                                      {CATEGORY_META[category].icon} {CATEGORY_META[category].label}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  className="icon-button"
+                                  onClick={() => removeDraftPlace(place.id)}
+                                  aria-label={`Remove ${place.name}`}
+                                >
+                                  ×
+                                </button>
+                                {place.category === 'hotel' ? (
+                                  <div className="draft-place__stay">
+                                    <label>
+                                      <span>Check-in</span>
+                                      <input
+                                        type="date"
+                                        value={place.checkIn ?? ''}
+                                        onChange={(event) => updateDraftPlaceStay(place.id, { checkIn: event.target.value || undefined })}
+                                        aria-label={`Check-in date for ${place.name}`}
+                                      />
+                                    </label>
+                                    <label>
+                                      <span>Check-out</span>
+                                      <input
+                                        type="date"
+                                        value={place.checkOut ?? ''}
+                                        min={place.checkIn}
+                                        onChange={(event) => updateDraftPlaceStay(place.id, { checkOut: event.target.value || undefined })}
+                                        aria-label={`Check-out date for ${place.name}`}
+                                      />
+                                    </label>
+                                  </div>
+                                ) : null}
+                              </div>
+                            ))
+                          : null}
                       </div>
-                      <select
-                        className="draft-place__category"
-                        value={place.category}
-                        onChange={(event) => updateDraftPlaceCategory(place.id, event.target.value as PlaceCategory)}
-                        aria-label={`Category for ${place.name}`}
-                      >
-                        {PLACE_CATEGORIES.map((category) => (
-                          <option key={category} value={category}>
-                            {CATEGORY_META[category].icon} {CATEGORY_META[category].label}
-                          </option>
-                        ))}
-                      </select>
-                      <button type="button" className="icon-button" onClick={() => removeDraftPlace(place.id)} aria-label={`Remove ${place.name}`}>
-                        ×
-                      </button>
-                      {place.category === 'hotel' ? (
-                        <div className="draft-place__stay">
-                          <label>
-                            <span>Check-in</span>
-                            <input
-                              type="date"
-                              value={place.checkIn ?? ''}
-                              onChange={(event) => updateDraftPlaceStay(place.id, { checkIn: event.target.value || undefined })}
-                              aria-label={`Check-in date for ${place.name}`}
-                            />
-                          </label>
-                          <label>
-                            <span>Check-out</span>
-                            <input
-                              type="date"
-                              value={place.checkOut ?? ''}
-                              min={place.checkIn}
-                              onChange={(event) => updateDraftPlaceStay(place.id, { checkOut: event.target.value || undefined })}
-                              aria-label={`Check-out date for ${place.name}`}
-                            />
-                          </label>
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
+                    );
+                  })}
                   {draft.places.length === 0 ? <p className="draft-places__empty">Search above to pin real places from Google Maps.</p> : null}
                 </div>
               </div>
@@ -2550,9 +2614,24 @@ function TripPlanView({
 
       {viewMode === 'cards' ? (
         <div className="trip-plan-view__days">
-          {days.map((tripDay) => (
+          {days.map((tripDay) => {
+            const hotel = findHotelForDay(places, tripDay.date);
+            return (
             <div key={tripDay.id} className="trip-plan-view__day">
               <strong>{tripDay.label}</strong>
+              {hotel?.kind === 'switch' ? (
+                <div className="trip-plan-view__hotel trip-plan-view__hotel--switch">
+                  <span aria-hidden="true">🔄</span> {hotel.from.name} → {hotel.to.name}
+                </div>
+              ) : hotel?.kind === 'checkout' ? (
+                <div className="trip-plan-view__hotel trip-plan-view__hotel--checkout">
+                  <span aria-hidden="true">🧳</span> Checking out of {hotel.hotel.name}
+                </div>
+              ) : hotel?.kind === 'single' ? (
+                <div className="trip-plan-view__hotel">
+                  <span aria-hidden="true">🏨</span> Staying at {hotel.hotel.name}
+                </div>
+              ) : null}
               {tripDay.placeIds.length === 0 ? (
                 <p className="trip-day__empty">No stops planned</p>
               ) : (
@@ -2572,7 +2651,8 @@ function TripPlanView({
                 </ol>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="trip-timeline">
@@ -2585,12 +2665,47 @@ function TripPlanView({
             <div key={tripDay.id} className="trip-timeline__day">
               <div className="trip-timeline__day-label">{tripDay.label}</div>
               {hotel ? (
-                <div className="trip-timeline__hotel-banner">
-                  <span className="trip-timeline__hotel-name">
-                    <span aria-hidden="true">🏨</span> Staying at {hotel.name}
-                  </span>
-                  {firstPlace && firstPlace.id !== hotel.id ? <TimelineTravelTime origin={hotel} destination={firstPlace} /> : null}
-                </div>
+                (() => {
+                  const referenceHotel = hotel.kind === 'switch' ? hotel.to : hotel.hotel;
+                  const icon = hotel.kind === 'switch' ? '🔄' : hotel.kind === 'checkout' ? '🧳' : '🏨';
+                  return (
+                    <div className="trip-timeline__item">
+                      <div className="trip-timeline__marker">
+                        <span className="trip-timeline__dot trip-timeline__dot--hotel" aria-hidden="true">
+                          {icon}
+                        </span>
+                        {firstPlace && firstPlace.id !== referenceHotel.id ? (
+                          <div className="trip-timeline__line-wrap">
+                            <span className="trip-timeline__line trip-timeline__line--hotel" />
+                            <TimelineTravelTime origin={referenceHotel} destination={firstPlace} />
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="trip-timeline__content">
+                        {hotel.kind === 'switch' ? (
+                          <>
+                            <strong>
+                              Switching hotels: {hotel.from.name} → {hotel.to.name}
+                            </strong>
+                            <small>
+                              Check out of {hotel.from.name}, check into {hotel.to.name}
+                            </small>
+                          </>
+                        ) : hotel.kind === 'checkout' ? (
+                          <>
+                            <strong>Checking out of {hotel.hotel.name}</strong>
+                            <small>Last day at this hotel</small>
+                          </>
+                        ) : (
+                          <>
+                            <strong>Staying at {hotel.hotel.name}</strong>
+                            <small>{hotel.hotel.address}</small>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()
               ) : null}
               {tripDay.placeIds.length === 0 ? (
                 <p className="trip-day__empty">No stops planned</p>
