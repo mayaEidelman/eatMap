@@ -3193,7 +3193,7 @@ function Avatar({
   }
 
   return (
-    <div className={className} style={{ background: user?.accent ?? 'linear-gradient(135deg, #334155, #0f172a)' }}>
+    <div className={className} style={{ background: user?.accent ?? 'linear-gradient(135deg, #8c7c7c, #4a4a4a)' }}>
       {user?.avatar ?? '??'}
     </div>
   );

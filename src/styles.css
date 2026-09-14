@@ -1,17 +1,17 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --bg: #f6f1e8;
-  --bg-alt: #eef2ff;
+  --bg: #fdf2ef;
+  --bg-alt: #f6d9d0;
   --panel: rgba(255, 255, 255, 0.82);
   --panel-strong: rgba(255, 255, 255, 0.95);
-  --ink: #0f172a;
-  --muted: #64748b;
-  --border: rgba(15, 23, 42, 0.08);
-  --shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
-  --accent-hot: #f97316;
-  --accent-sky: #2563eb;
-  --accent-teal: #14b8a6;
+  --ink: #4a4a4a;
+  --muted: #8c7c7c;
+  --border: rgba(74, 74, 74, 0.12);
+  --shadow: 0 24px 60px rgba(74, 74, 74, 0.14);
+  --accent-hot: #cf7f95;
+  --accent-sky: #eab8a8;
+  --accent-teal: #4a4a4a;
 }
 
 * {
@@ -28,9 +28,9 @@ body {
   color: var(--ink);
   font-family: 'Manrope', sans-serif;
   background:
-    radial-gradient(circle at top left, rgba(249, 115, 22, 0.18), transparent 30%),
-    radial-gradient(circle at top right, rgba(37, 99, 235, 0.16), transparent 28%),
-    linear-gradient(180deg, #fffaf3 0%, #eef4ff 50%, #f8f5ef 100%);
+    radial-gradient(circle at top left, rgba(234, 184, 168, 0.3), transparent 30%),
+    radial-gradient(circle at top right, rgba(207, 127, 149, 0.2), transparent 28%),
+    linear-gradient(180deg, #fdf2ef 0%, #f8e2da 50%, #fdf2ef 100%);
 }
 
 button,
@@ -71,8 +71,8 @@ button {
   display: grid;
   gap: 18px;
   background:
-    radial-gradient(circle at top left, rgba(249, 115, 22, 0.14), transparent 26%),
-    radial-gradient(circle at bottom right, rgba(37, 99, 235, 0.11), transparent 24%),
+    radial-gradient(circle at top left, rgba(234, 184, 168, 0.22), transparent 26%),
+    radial-gradient(circle at bottom right, rgba(207, 127, 149, 0.16), transparent 24%),
     rgba(255, 255, 255, 0.9);
 }
 
@@ -103,7 +103,7 @@ button {
   gap: 10px;
   padding: 6px;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.04);
+  background: rgba(74, 74, 74, 0.04);
   width: fit-content;
 }
 
@@ -233,7 +233,7 @@ button {
      legible over both light and dark map tiles instead of disappearing into the background. */
   -webkit-text-stroke: 3px rgba(255, 255, 255, 0.95);
   paint-order: stroke fill;
-  text-shadow: 0 2px 10px rgba(15, 23, 42, 0.25);
+  text-shadow: 0 2px 10px rgba(74, 74, 74, 0.25);
 }
 
 .topbar__nav {
@@ -242,7 +242,7 @@ button {
   padding: 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+  box-shadow: 0 12px 28px rgba(74, 74, 74, 0.16);
 }
 
 .topbar__nav .nav-tab {
@@ -267,7 +267,7 @@ button {
 .nav-tab--active {
   color: var(--ink);
   background: white;
-  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 16px rgba(74, 74, 74, 0.08);
 }
 
 .page-transition {
@@ -412,7 +412,7 @@ button {
 }
 
 .save-to-list-item--active {
-  background: rgba(37, 99, 235, 0.08);
+  background: rgba(207, 127, 149, 0.08);
   border-radius: 12px;
 }
 
@@ -423,15 +423,15 @@ button {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  border: 1.5px solid rgba(15, 23, 42, 0.2);
+  border: 1.5px solid rgba(74, 74, 74, 0.2);
   font-weight: 700;
   font-size: 13px;
   color: transparent;
 }
 
 .save-to-list-item__check--active {
-  background: #2563eb;
-  border-color: #2563eb;
+  background: #cf7f95;
+  border-color: #cf7f95;
   color: #ffffff;
 }
 
@@ -448,12 +448,12 @@ button {
 
 .account-list-sidebar__item:hover {
   transform: translateY(-1px);
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 12px 24px rgba(74, 74, 74, 0.08);
 }
 
 .account-list-sidebar__item--active {
-  border-color: rgba(37, 99, 235, 0.32);
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(249, 115, 22, 0.08));
+  border-color: rgba(207, 127, 149, 0.32);
+  background: linear-gradient(135deg, rgba(207, 127, 149, 0.1), rgba(234, 184, 168, 0.08));
 }
 
 .sidebar-timeline {
@@ -550,7 +550,7 @@ button {
   text-align: right;
   padding: 10px 14px;
   border-radius: 16px;
-  background: rgba(15, 23, 42, 0.4);
+  background: rgba(74, 74, 74, 0.4);
   backdrop-filter: blur(4px);
 }
 
@@ -583,8 +583,8 @@ button {
 }
 
 .dm-thread--active {
-  border-color: rgba(37, 99, 235, 0.24);
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(249, 115, 22, 0.08));
+  border-color: rgba(207, 127, 149, 0.24);
+  background: linear-gradient(135deg, rgba(207, 127, 149, 0.1), rgba(234, 184, 168, 0.08));
 }
 
 .dm-thread__avatar {
@@ -634,13 +634,13 @@ button {
   max-width: 84%;
   padding: 12px 14px;
   border-radius: 18px 18px 18px 6px;
-  background: rgba(15, 23, 42, 0.06);
+  background: rgba(74, 74, 74, 0.06);
 }
 
 .dm-bubble--mine {
   justify-self: end;
   border-radius: 18px 18px 6px 18px;
-  background: linear-gradient(135deg, rgba(249, 115, 22, 0.16), rgba(37, 99, 235, 0.14));
+  background: linear-gradient(135deg, rgba(234, 184, 168, 0.16), rgba(207, 127, 149, 0.14));
 }
 
 .dm-chat__composer {
@@ -669,8 +669,8 @@ button {
 }
 
 .demo-account--active {
-  border-color: rgba(249, 115, 22, 0.35);
-  box-shadow: 0 10px 24px rgba(249, 115, 22, 0.14);
+  border-color: rgba(234, 184, 168, 0.35);
+  box-shadow: 0 10px 24px rgba(234, 184, 168, 0.14);
 }
 
 .demo-account span {
@@ -754,8 +754,8 @@ button.stat-pill {
 }
 
 .pill--active {
-  border-color: rgba(37, 99, 235, 0.25);
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(249, 115, 22, 0.16));
+  border-color: rgba(207, 127, 149, 0.25);
+  background: linear-gradient(135deg, rgba(207, 127, 149, 0.16), rgba(234, 184, 168, 0.16));
 }
 
 .form-grid span {
@@ -788,15 +788,15 @@ button.stat-pill {
 }
 
 .icon-button--active {
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(249, 115, 22, 0.14));
-  border-color: rgba(37, 99, 235, 0.32);
+  background: linear-gradient(135deg, rgba(207, 127, 149, 0.16), rgba(234, 184, 168, 0.14));
+  border-color: rgba(207, 127, 149, 0.32);
 }
 
 .primary-button {
   border: 0;
   color: white;
-  background: linear-gradient(135deg, var(--accent-hot), #ea580c);
-  box-shadow: 0 16px 28px rgba(249, 115, 22, 0.22);
+  background: linear-gradient(135deg, var(--accent-hot), #b8637c);
+  box-shadow: 0 16px 28px rgba(234, 184, 168, 0.22);
 }
 
 .secondary-button,
@@ -828,7 +828,7 @@ button.stat-pill {
 }
 
 .map-quick-add__result small {
-  color: #64748b;
+  color: var(--muted);
 }
 
 .map-quick-add__actions {
@@ -879,7 +879,7 @@ button.stat-pill {
 .owner-card:hover,
 .stat-pill:hover {
   transform: translateY(-2px);
-  box-shadow: 0 18px 30px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 18px 30px rgba(74, 74, 74, 0.08);
 }
 
 .map-panel {
@@ -906,7 +906,7 @@ button.stat-pill {
   padding: 24px;
   text-align: center;
   color: var(--muted);
-  background: rgba(15, 23, 42, 0.03);
+  background: rgba(74, 74, 74, 0.03);
 }
 
 .map-panel__error strong {
@@ -922,7 +922,7 @@ button.stat-pill {
   padding: 8px 12px;
   border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.4);
+  background: rgba(74, 74, 74, 0.4);
   color: white;
   font-weight: 700;
   font-size: 0.82rem;
@@ -930,7 +930,7 @@ button.stat-pill {
 }
 
 .bookmark-button--active {
-  background: linear-gradient(135deg, var(--accent-hot), #ea580c);
+  background: linear-gradient(135deg, var(--accent-hot), #b8637c);
   border-color: transparent;
 }
 
@@ -980,7 +980,7 @@ button.stat-pill {
 
 .owner-card__actions .bookmark-button--active {
   color: white;
-  background: linear-gradient(135deg, var(--accent-hot), #ea580c);
+  background: linear-gradient(135deg, var(--accent-hot), #b8637c);
 }
 
 .trip-card__body {
@@ -1008,7 +1008,7 @@ button.stat-pill {
 }
 
 .chip--soft {
-  background: rgba(15, 23, 42, 0.04);
+  background: rgba(74, 74, 74, 0.04);
 }
 
 .detail-panel__description {
@@ -1028,14 +1028,14 @@ button.stat-pill {
   align-items: center;
   gap: 10px;
   padding: 10px 0;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  border-bottom: 1px solid rgba(74, 74, 74, 0.06);
 }
 
 .place-list__item--clickable {
   width: 100%;
   background: none;
   border: none;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  border-bottom: 1px solid rgba(74, 74, 74, 0.06);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -1043,7 +1043,7 @@ button.stat-pill {
 }
 
 .place-list__item--clickable:hover {
-  background: rgba(15, 23, 42, 0.04);
+  background: rgba(74, 74, 74, 0.04);
 }
 
 .place-preview-modal {
@@ -1079,8 +1079,8 @@ button.stat-pill {
 
 .star-button--active {
   color: #f59e0b;
-  background: rgba(245, 158, 11, 0.12);
-  border-color: rgba(245, 158, 11, 0.25);
+  background: rgba(207, 127, 149, 0.12);
+  border-color: rgba(207, 127, 149, 0.25);
 }
 
 .modal-backdrop {
@@ -1091,7 +1091,7 @@ button.stat-pill {
   place-items: start center;
   padding: 24px;
   overflow-y: auto;
-  background: rgba(15, 23, 42, 0.42);
+  background: rgba(74, 74, 74, 0.42);
 }
 
 .modal {
@@ -1185,7 +1185,7 @@ button.stat-pill {
 }
 
 .map-popup__links a {
-  color: #2563eb;
+  color: #cf7f95;
   text-decoration: none;
 }
 
@@ -1246,17 +1246,17 @@ button.stat-pill {
   padding: 0;
   border: none;
   background: none;
-  color: #64748b;
+  color: var(--muted);
   cursor: pointer;
   border-radius: 999px;
 }
 
 .map-popup__save-icon:hover {
-  background: rgba(15, 23, 42, 0.06);
+  background: rgba(74, 74, 74, 0.06);
 }
 
 .map-popup__save-icon--active {
-  color: #2563eb;
+  color: #cf7f95;
 }
 
 @media (max-width: 1240px) {
@@ -1575,7 +1575,7 @@ button.stat-pill {
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: rgba(249, 115, 22, 0.06);
+  background: rgba(234, 184, 168, 0.06);
 }
 
 .expense-invite small {
@@ -1607,7 +1607,7 @@ button.stat-pill {
 
 .expense-group-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 18px 30px rgba(15, 23, 42, 0.1);
+  box-shadow: 0 18px 30px rgba(74, 74, 74, 0.1);
 }
 
 .expense-group-card strong {
@@ -1841,7 +1841,7 @@ button.stat-pill {
   padding: 0;
   border-radius: 999px;
   font-size: 1.15rem;
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.14);
+  box-shadow: 0 12px 24px rgba(74, 74, 74, 0.14);
 }
 
 .map-search-float__popover {
@@ -1853,7 +1853,7 @@ button.stat-pill {
   width: min(340px, calc(100vw - 48px));
   padding: 16px;
   border-radius: 20px;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 20px 40px rgba(74, 74, 74, 0.18);
 }
 
 .map-search-float__header {
@@ -1918,7 +1918,7 @@ button.stat-pill {
   padding: 6px 10px;
   border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.4);
+  background: rgba(74, 74, 74, 0.4);
   color: white;
   font-weight: 700;
   font-size: 0.8rem;
@@ -1926,8 +1926,8 @@ button.stat-pill {
 }
 
 .rect-card__like--active {
-  color: #fb7185;
-  background: rgba(15, 23, 42, 0.55);
+  color: #cf7f95;
+  background: rgba(74, 74, 74, 0.55);
 }
 
 .rect-card__img {
@@ -1941,7 +1941,7 @@ button.stat-pill {
 .rect-card__scrim {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, transparent 55%, rgba(15, 23, 42, 0.72));
+  background: linear-gradient(180deg, transparent 55%, rgba(74, 74, 74, 0.72));
 }
 
 .rect-card__name {
@@ -1957,7 +1957,7 @@ button.stat-pill {
 
 .rect-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 18px 30px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 18px 30px rgba(74, 74, 74, 0.12);
 }
 
 .list-detail-modal {
@@ -1972,7 +1972,7 @@ button.stat-pill {
   top: 14px;
   right: 14px;
   z-index: 2;
-  background: rgba(15, 23, 42, 0.4);
+  background: rgba(74, 74, 74, 0.4);
   color: white;
   border-color: transparent;
 }
@@ -1995,7 +1995,7 @@ button.stat-pill {
 .list-detail-modal__scrim {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.25), rgba(15, 23, 42, 0.78));
+  background: linear-gradient(180deg, rgba(74, 74, 74, 0.25), rgba(74, 74, 74, 0.78));
 }
 
 .list-detail-modal__hero > * {
@@ -2242,7 +2242,7 @@ button.stat-pill {
   padding: 12px;
   border: 1px dashed var(--border);
   border-radius: 16px;
-  background: rgba(15, 23, 42, 0.02);
+  background: rgba(74, 74, 74, 0.02);
 }
 
 .trip-plan-unscheduled__label {
@@ -2325,7 +2325,7 @@ button.stat-pill {
   overflow: hidden;
   text-overflow: ellipsis;
   flex-shrink: 0;
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 4px 10px rgba(74, 74, 74, 0.12);
 }
 
 .trip-timeline__line-wrap {
@@ -2357,7 +2357,7 @@ button.stat-pill {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: white;
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.1);
+  box-shadow: 0 6px 14px rgba(74, 74, 74, 0.1);
   white-space: nowrap;
 }
 
@@ -2380,7 +2380,7 @@ button.stat-pill {
 .travel-time-chip__mode--active {
   opacity: 1;
   filter: none;
-  background: rgba(37, 99, 235, 0.12);
+  background: rgba(207, 127, 149, 0.12);
 }
 
 .travel-time-chip__duration {
@@ -2416,12 +2416,12 @@ button.stat-pill {
   width: 36px;
   height: 26px;
   border-radius: 6px;
-  border: 1px solid rgba(245, 158, 11, 0.4);
+  border: 1px solid rgba(207, 127, 149, 0.4);
   overflow: hidden;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(245, 158, 11, 0.12);
+  background: rgba(207, 127, 149, 0.12);
 }
 
 .timeline-attachment__minithumb {
@@ -2451,8 +2451,8 @@ button.stat-pill {
 }
 
 .timeline-attachment__toggle--active {
-  border-color: rgba(245, 158, 11, 0.5);
-  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(207, 127, 149, 0.5);
+  background: rgba(207, 127, 149, 0.14);
   filter: none;
   opacity: 1;
 }
@@ -2468,9 +2468,9 @@ button.stat-pill {
 .timeline-attachment__panel {
   margin-top: 8px;
   padding: 10px 12px;
-  border: 1px solid rgba(245, 158, 11, 0.4);
+  border: 1px solid rgba(207, 127, 149, 0.4);
   border-radius: 12px;
-  background: rgba(245, 158, 11, 0.08);
+  background: rgba(207, 127, 149, 0.08);
   display: grid;
   gap: 8px;
   max-width: 320px;
@@ -2481,7 +2481,7 @@ button.stat-pill {
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  color: #b45309;
+  color: #9c4f66;
 }
 
 .timeline-attachment__textarea {
