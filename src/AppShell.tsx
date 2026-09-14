@@ -88,6 +88,19 @@ function findHotelForDay(places: Place[], date: string | undefined): HotelForDay
   return covering ? { kind: 'single', hotel: covering } : undefined;
 }
 
+/** One color per distinct destination (e.g. "Tokyo" vs "Kyoto"), assigned by order of first
+ * appearance across the day list so the same destination always gets the same color within a
+ * given list -- reuses the same palette as map/list markers rather than a separate one. */
+function buildDestinationColors(days: TripDay[]): Map<string, string> {
+  const colors = new Map<string, string>();
+  for (const day of days) {
+    if (day.destination && !colors.has(day.destination)) {
+      colors.set(day.destination, LIST_MARKER_COLORS[colors.size % LIST_MARKER_COLORS.length]);
+    }
+  }
+  return colors;
+}
+
 /** Places with a startTime sort chronologically; places without one keep their manual drag order,
  * appended after every timed place (stable within each group). */
 function sortPlaceIdsByTime(placeIds: string[], placeTimes: Record<string, PlaceTimeRange> | undefined): string[] {
@@ -462,6 +475,13 @@ function AppShell() {
     setDraft((current) => ({
       ...current,
       days: current.days.map((tripDay) => (tripDay.id === dayId ? { ...tripDay, label } : tripDay)),
+    }));
+  }, []);
+
+  const setDraftDayDestination = useCallback((dayId: string, destination: string) => {
+    setDraft((current) => ({
+      ...current,
+      days: current.days.map((tripDay) => (tripDay.id === dayId ? { ...tripDay, destination: destination || undefined } : tripDay)),
     }));
   }, []);
 
@@ -1064,6 +1084,9 @@ function AppShell() {
     }
   }
 
+  const draftDestinationColors = buildDestinationColors(draft.days);
+  const draftDestinations = Array.from(new Set(draft.days.map((tripDay) => tripDay.destination).filter(Boolean))) as string[];
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -1588,6 +1611,12 @@ function AppShell() {
                   </small>
                 ) : null}
 
+                <datalist id="draft-destinations">
+                  {draftDestinations.map((destination) => (
+                    <option key={destination} value={destination} />
+                  ))}
+                </datalist>
+
                 <div className="trip-plan-days">
                   {draft.days.map((tripDay) => (
                     <div
@@ -1617,6 +1646,22 @@ function AppShell() {
                         >
                           ×
                         </button>
+                      </div>
+                      <div className="trip-day__destination">
+                        {tripDay.destination ? (
+                          <span
+                            className="trip-day__destination-dot"
+                            aria-hidden="true"
+                            style={{ background: draftDestinationColors.get(tripDay.destination) }}
+                          />
+                        ) : null}
+                        <input
+                          value={tripDay.destination ?? ''}
+                          onChange={(event) => setDraftDayDestination(tripDay.id, event.target.value)}
+                          placeholder="Destination (e.g. Tokyo)"
+                          list="draft-destinations"
+                          aria-label={`Destination for ${tripDay.label}`}
+                        />
                       </div>
                       <div className="trip-day__places">
                         {tripDay.placeIds.map((placeId) => {
@@ -2590,6 +2635,8 @@ function TripPlanView({
     return null;
   }
 
+  const destinationColors = buildDestinationColors(days);
+
   return (
     <div className="trip-plan-view">
       <div className="section-heading">
@@ -2618,6 +2665,14 @@ function TripPlanView({
             const hotel = findHotelForDay(places, tripDay.date);
             return (
             <div key={tripDay.id} className="trip-plan-view__day">
+              {tripDay.destination ? (
+                <div
+                  className="trip-plan-view__destination"
+                  style={{ background: destinationColors.get(tripDay.destination) }}
+                >
+                  {tripDay.destination}
+                </div>
+              ) : null}
               <strong>{tripDay.label}</strong>
               {hotel?.kind === 'switch' ? (
                 <div className="trip-plan-view__hotel trip-plan-view__hotel--switch">

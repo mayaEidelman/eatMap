@@ -2163,6 +2163,29 @@ button.stat-pill {
   color: var(--ink);
 }
 
+.trip-day__destination {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trip-day__destination-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.trip-day__destination input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 0.78rem;
+  color: var(--ink);
+}
+
 .trip-day__places {
   display: grid;
   gap: 8px;
@@ -2610,6 +2633,17 @@ button.stat-pill {
   border: 1px solid var(--border);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.6);
+}
+
+.trip-plan-view__destination {
+  margin: -12px -12px 8px;
+  padding: 6px 12px;
+  border-radius: 16px 16px 0 0;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.76rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .trip-plan-view__day ol {

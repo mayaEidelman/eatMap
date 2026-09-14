@@ -49,6 +49,9 @@ export type TripDay = {
   /** ISO "YYYY-MM-DD" -- only set when days were generated from the list's start/end date. Lets a
    * hotel's checkIn/checkOut range be matched against this specific day. */
   date?: string;
+  /** Free-text sub-region within the trip (e.g. "Tokyo" vs "Kyoto"). Days sharing the same
+   * destination get the same auto-assigned color in the UI. */
+  destination?: string;
 };
 
 export type AttachmentFile = {

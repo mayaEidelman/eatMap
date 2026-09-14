@@ -133,11 +133,15 @@ create table if not exists public.trip_days (
   -- Only set when days were generated from the list's start/end date -- lets a hotel's
   -- check-in/check-out range be matched against a specific day. Manually-added days (not
   -- generated from a date range) simply have no date and never match a hotel.
-  date date
+  date date,
+  -- Free-text sub-region within the trip (e.g. "Tokyo" vs "Kyoto" on a Japan trip). Days sharing
+  -- the same destination get the same auto-assigned color in the UI.
+  destination text
 );
 
--- Safe to re-run against a database that already has this table from before this column existed.
+-- Safe to re-run against a database that already has this table from before these columns existed.
 alter table public.trip_days add column if not exists date date;
+alter table public.trip_days add column if not exists destination text;
 
 create index if not exists trip_days_list_id_idx on public.trip_days (list_id);
 

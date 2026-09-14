@@ -113,7 +113,16 @@ async function savePlacesAndDays(listId: string, places: DraftPlace[], days: Dra
   // here, which is exactly what made saving feel like it hung.
   const { error: daysError } = await supabase
     .from('trip_days')
-    .insert(days.map((day, index) => ({ id: day.id, list_id: listId, label: day.label, sort_order: index, date: day.date || null })));
+    .insert(
+      days.map((day, index) => ({
+        id: day.id,
+        list_id: listId,
+        label: day.label,
+        sort_order: index,
+        date: day.date || null,
+        destination: day.destination || null,
+      })),
+    );
   if (daysError) throw daysError;
 
   // Reinsert preserves each place's previously-set time range -- `savePlacesAndDays` fully
