@@ -1,0 +1,28 @@
+{
+  "name": "eatmap",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.113.0",
+    "@tanstack/query-sync-storage-persister": "^5.102.8",
+    "@tanstack/react-query": "^5.102.8",
+    "@tanstack/react-query-persist-client": "^5.102.8",
+    "lucide-react": "^1.46.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/google.maps": "^3.58.1",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.6.0",
+    "typescript": "^5.9.2",
+    "vite": "^5.4.19"
+  }
+}
