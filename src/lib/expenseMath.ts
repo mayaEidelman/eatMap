@@ -26,6 +26,16 @@ export function sharesSumTo(shares: ExpenseShare[], amount: number): boolean {
   return Math.abs(sum - amount) < EPSILON;
 }
 
+/** True when an expense's shares look like an equal split. `splitEqually` hands any leftover
+ * rounding cents to the first few participants, so a genuinely equal split never has shares more
+ * than a cent apart -- that's a cheaper and order-independent check than recomputing and comparing
+ * against `splitEqually`'s exact output. */
+export function isEquallySplit(expense: { shares: ExpenseShare[] }): boolean {
+  if (expense.shares.length === 0) return true;
+  const amounts = expense.shares.map((share) => share.amount);
+  return Math.max(...amounts) - Math.min(...amounts) < 0.015;
+}
+
 export type Balance = { userId: string; net: number };
 
 /** Net balance per member in the group's base currency. Positive means the group owes them money;

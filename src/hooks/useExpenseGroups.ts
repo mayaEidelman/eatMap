@@ -1,9 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createExpenseGroup,
+  deleteExpenseGroup as deleteExpenseGroupApi,
   fetchExpenseGroups,
   inviteMember as inviteMemberApi,
   removeMember as removeMemberApi,
+  renameExpenseGroup as renameExpenseGroupApi,
   respondToInvite as respondToInviteApi,
 } from '../lib/api/expenses';
 
@@ -41,6 +43,16 @@ export function useExpenseGroups(currentUserId: string | null) {
     await queryClient.invalidateQueries({ queryKey });
   }
 
+  async function renameGroup(groupId: string, name: string) {
+    await renameExpenseGroupApi(groupId, name);
+    await queryClient.invalidateQueries({ queryKey });
+  }
+
+  async function deleteGroup(groupId: string) {
+    await deleteExpenseGroupApi(groupId);
+    await queryClient.invalidateQueries({ queryKey });
+  }
+
   return {
     groups: query.data ?? [],
     isLoading: query.isPending,
@@ -49,5 +61,7 @@ export function useExpenseGroups(currentUserId: string | null) {
     inviteMember,
     respondToInvite,
     removeMember,
+    renameGroup,
+    deleteGroup,
   };
 }

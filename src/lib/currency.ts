@@ -15,7 +15,10 @@ export async function getExchangeRate(from: string, to: string): Promise<number>
   const cached = rateCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
-  const response = await fetch(`https://api.frankfurter.app/latest?from=${from}&to=${to}`);
+  // frankfurter.app now 301-redirects here; the redirect response itself has no CORS headers,
+  // which browsers surface as an opaque "Failed to fetch" rather than following it cleanly.
+  // Hitting the current domain directly avoids the redirect hop entirely.
+  const response = await fetch(`https://api.frankfurter.dev/v1/latest?from=${from}&to=${to}`);
   if (!response.ok) throw new Error(`Could not fetch exchange rate for ${from} -> ${to}.`);
 
   const payload = await response.json();

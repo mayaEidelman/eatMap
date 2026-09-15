@@ -82,6 +82,16 @@ export async function createExpenseGroup(
   return groupId;
 }
 
+export async function renameExpenseGroup(groupId: string, name: string): Promise<void> {
+  const { error } = await supabase.from('expense_groups').update({ name }).eq('id', groupId);
+  if (error) throw error;
+}
+
+export async function deleteExpenseGroup(groupId: string): Promise<void> {
+  const { error } = await supabase.from('expense_groups').delete().eq('id', groupId);
+  if (error) throw error;
+}
+
 export async function inviteMember(groupId: string, userId: string, invitedBy: string): Promise<void> {
   const { error } = await supabase
     .from('expense_group_members')
@@ -90,6 +100,15 @@ export async function inviteMember(groupId: string, userId: string, invitedBy: s
 }
 
 export async function respondToInvite(groupId: string, userId: string, status: 'accepted' | 'declined'): Promise<void> {
+  // A decline just removes the membership row rather than keeping a 'declined' row around --
+  // there's nothing useful to do with a permanently-declined invite, and dropping the row is what
+  // makes it disappear from both the owner's roster and the invitee's own group list in one place.
+  if (status === 'declined') {
+    const { error } = await supabase.from('expense_group_members').delete().eq('group_id', groupId).eq('user_id', userId);
+    if (error) throw error;
+    return;
+  }
+
   const { error } = await supabase
     .from('expense_group_members')
     .update({ status, responded_at: new Date().toISOString() })
