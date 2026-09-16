@@ -45,6 +45,9 @@ import type {
 
 const DEFAULT_COVER = 'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?q=80&w=1200&auto=format&fit=crop';
 
+const RECENTLY_WATCHED_KEY = 'eatmap:recently-watched-lists';
+const RECENTLY_WATCHED_LIMIT = 3;
+
 /** Places actually assigned to some day -- excludes places saved to the list but never dragged
  * into the trip plan, so "All days" in the timeline means "everything scheduled," not
  * "everything saved." */
@@ -380,6 +383,14 @@ function AppShell() {
   const [inspectedPlaceId, setInspectedPlaceId] = useState<string | null>(null);
   const [openTimelineListIds, setOpenTimelineListIds] = useState<Set<string>>(new Set());
   const [selectedDayByListId, setSelectedDayByListId] = useState<Record<string, string | null>>({});
+  const [recentlyWatchedListIds, setRecentlyWatchedListIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(RECENTLY_WATCHED_KEY);
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const [expenseGroupDetailId, setExpenseGroupDetailId] = useState<string | null>(null);
   const [newExpenseGroupOpen, setNewExpenseGroupOpen] = useState(false);
@@ -413,6 +424,14 @@ function AppShell() {
     splitMode: 'equal' as 'equal' | 'custom',
     customAmounts: {} as Record<string, string>,
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RECENTLY_WATCHED_KEY, JSON.stringify(recentlyWatchedListIds));
+    } catch {
+      // Best-effort persistence -- private browsing/full storage shouldn't break the feature.
+    }
+  }, [recentlyWatchedListIds]);
 
   const currentUser = data ? data.users.find((user) => user.id === data.currentUserId) : undefined;
   const selectedList = data ? data.lists.find((list) => list.id === selectedListId) ?? data.lists[0] : undefined;
@@ -589,7 +608,26 @@ function AppShell() {
     [data],
   );
 
-  const myMapLists = useMemo(() => [...accountLists, ...savedLists], [accountLists, savedLists]);
+  // Lists viewed via "Show on map" that the viewer neither owns nor saved. Filtered at render
+  // (rather than pruned from storage) so a list that gets saved afterward simply stops matching
+  // here and shows up under Saved lists instead, with no risk of appearing in both at once.
+  const recentlyWatchedLists = useMemo(
+    () =>
+      data
+        ? recentlyWatchedListIds
+            .map((id) => data.lists.find((list) => list.id === id))
+            .filter((list): list is TripList => Boolean(list))
+            .filter(
+              (list) => list.ownerId !== data.currentUserId && !isSaved(data.savedLists, data.currentUserId, list.id),
+            )
+        : [],
+    [data, recentlyWatchedListIds],
+  );
+
+  const myMapLists = useMemo(
+    () => [...accountLists, ...savedLists, ...recentlyWatchedLists],
+    [accountLists, savedLists, recentlyWatchedLists],
+  );
 
   // When a list's sidebar timeline is open and a specific day is picked, the map should only
   // show that day's places; closed (or open with no day picked, i.e. "all days") shows everything.
@@ -961,6 +999,13 @@ function AppShell() {
   }
 
   function showListOnMap(listId: string) {
+    const list = data?.lists.find((item) => item.id === listId);
+    const isOwned = list?.ownerId === data?.currentUserId;
+    const alreadySaved = data ? isSaved(data.savedLists, data.currentUserId, listId) : false;
+    if (list && !isOwned && !alreadySaved) {
+      setRecentlyWatchedListIds((current) => [listId, ...current.filter((id) => id !== listId)].slice(0, RECENTLY_WATCHED_LIMIT));
+    }
+
     setSelectedListId(listId);
     setPage('home');
     setListDetailId(null);
@@ -1413,6 +1458,30 @@ function AppShell() {
                   )}
                 </div>
               </div>
+
+              {recentlyWatchedLists.length > 0 ? (
+                <div className="sidebar__section">
+                  <div className="section-heading">
+                    <h3>Recently watched</h3>
+                    <span>{recentlyWatchedLists.length}</span>
+                  </div>
+                  <div className="account-list-sidebar">
+                    {recentlyWatchedLists.map((list) => (
+                      <SidebarListItem
+                        key={list.id}
+                        list={list}
+                        active={list.id === selectedListId}
+                        onSelect={() => setSelectedListId(list.id)}
+                        onView={() => openListDetail(list.id)}
+                        timelineOpen={openTimelineListIds.has(list.id)}
+                        onToggleTimeline={() => toggleListTimeline(list.id)}
+                        selectedDayId={selectedDayByListId[list.id] ?? null}
+                        onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </aside>
           ) : (
             <div className="map-search-float">
