@@ -897,6 +897,7 @@ button.stat-pill {
 }
 
 .owner-card {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -918,6 +919,64 @@ button.stat-pill {
 
 .owner-card__hit > div {
   min-width: 0;
+}
+
+.owner-card__side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.collaborator-stack {
+  position: absolute;
+  top: -14px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  padding: 0;
+  cursor: pointer;
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+}
+
+.collaborator-stack--filled {
+  width: auto;
+  height: auto;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 4px;
+}
+
+.collaborator-stack:hover {
+  background: rgba(74, 74, 74, 0.06);
+}
+
+.collaborator-stack__avatars {
+  display: flex;
+}
+
+.collaborator-stack__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: white;
+  font-weight: 800;
+  font-size: 0.65rem;
+  border: 2px solid var(--panel);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  margin-left: -10px;
+}
+
+.collaborator-stack__avatar:first-child {
+  margin-left: 0;
 }
 
 .owner-card:hover,
@@ -1828,6 +1887,62 @@ button.stat-pill {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.list-collaborators {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.list-collaborators__roster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.list-collaborators__person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  text-align: left;
+  cursor: pointer;
+}
+
+.list-collaborators__person .dm-thread__avatar {
+  width: 32px;
+  height: 32px;
+  font-size: 0.75rem;
+}
+
+.list-collaborators__person-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.list-collaborators__role {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.list-collaborators__role--owner {
+  color: var(--accent-hot);
+  font-weight: 700;
+}
+
+.list-collaborators__pending {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
 }
 
 .expense-member {

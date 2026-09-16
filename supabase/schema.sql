@@ -159,6 +159,22 @@ alter table public.trip_day_places add column if not exists start_time time;
 alter table public.trip_day_places add column if not exists end_time time;
 
 -- ============================================================================
+-- list_collaborators (invite other users to co-edit a list)
+-- ============================================================================
+
+create table if not exists public.list_collaborators (
+  list_id uuid not null references public.lists (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  status text not null default 'invited' check (status in ('invited', 'accepted', 'declined')),
+  invited_by uuid not null references public.profiles (id),
+  created_at timestamptz not null default now(),
+  responded_at timestamptz,
+  primary key (list_id, user_id)
+);
+
+create index if not exists list_collaborators_user_id_idx on public.list_collaborators (user_id);
+
+-- ============================================================================
 -- place_attachments / attachment_files (private, owner-only)
 -- ============================================================================
 
@@ -252,6 +268,7 @@ alter table public.lists enable row level security;
 alter table public.places enable row level security;
 alter table public.trip_days enable row level security;
 alter table public.trip_day_places enable row level security;
+alter table public.list_collaborators enable row level security;
 alter table public.place_attachments enable row level security;
 alter table public.attachment_files enable row level security;
 alter table public.ratings enable row level security;
@@ -269,7 +286,37 @@ drop policy if exists "Users can update their own profile" on public.profiles;
 create policy "Users can update their own profile" on public.profiles
   for update using (auth.uid() = id) with check (auth.uid() = id);
 
--- lists: readable by any signed-in user, writable only by the owner.
+-- lists: readable by any signed-in user, writable by the owner or an accepted collaborator
+-- (invited via list_collaborators below). Only the owner can insert/delete, so a collaborator can
+-- edit but never delete someone else's list or create lists "as" the owner.
+--
+-- Routed through security-definer helpers for the same reason as the expense-group equivalents
+-- above: `is_accepted_list_collaborator` reads list_collaborators without RLS applied, sidestepping
+-- both the "owner insert needs a not-yet-existing membership row" and "policy references its own
+-- table" recursion traps.
+create or replace function public.is_list_owner(lid uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (select 1 from public.lists where id = lid and owner_id = auth.uid());
+$$;
+
+create or replace function public.is_accepted_list_collaborator(lid uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.list_collaborators
+    where list_id = lid and user_id = auth.uid() and status = 'accepted'
+  );
+$$;
+
 drop policy if exists "Lists are readable by authenticated users" on public.lists;
 create policy "Lists are readable by authenticated users" on public.lists
   for select using (auth.role() = 'authenticated');
@@ -279,51 +326,97 @@ create policy "Owners can insert lists" on public.lists
   for insert with check (auth.uid() = owner_id);
 
 drop policy if exists "Owners can update their lists" on public.lists;
-create policy "Owners can update their lists" on public.lists
-  for update using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
+drop policy if exists "Owners and collaborators can update lists" on public.lists;
+create policy "Owners and collaborators can update lists" on public.lists
+  for update
+  using (auth.uid() = owner_id or public.is_accepted_list_collaborator(id))
+  with check (auth.uid() = owner_id or public.is_accepted_list_collaborator(id));
 
 drop policy if exists "Owners can delete their lists" on public.lists;
 create policy "Owners can delete their lists" on public.lists
   for delete using (auth.uid() = owner_id);
 
+-- list_collaborators: same visibility/authorization shape as expense_group_members --
+-- you can always see your own row (to respond to your own invite); once accepted you can see the
+-- rest of the roster too. Only the owner can invite; either the invitee or the owner can
+-- update/delete a row (accept/decline/leave, or the owner removing/kicking someone).
+drop policy if exists "Members can see list collaborator rows" on public.list_collaborators;
+create policy "Members can see list collaborator rows" on public.list_collaborators
+  for select using (
+    auth.uid() = user_id
+    or public.is_list_owner(list_id)
+    or public.is_accepted_list_collaborator(list_id)
+  );
+
+drop policy if exists "Owners can invite list collaborators" on public.list_collaborators;
+create policy "Owners can invite list collaborators" on public.list_collaborators
+  for insert with check (public.is_list_owner(list_id));
+
+drop policy if exists "Members and owners can update list collaborator rows" on public.list_collaborators;
+create policy "Members and owners can update list collaborator rows" on public.list_collaborators
+  for update
+  using (auth.uid() = user_id or public.is_list_owner(list_id))
+  with check (auth.uid() = user_id or public.is_list_owner(list_id));
+
+drop policy if exists "Members and owners can delete list collaborator rows" on public.list_collaborators;
+create policy "Members and owners can delete list collaborator rows" on public.list_collaborators
+  for delete using (auth.uid() = user_id or public.is_list_owner(list_id));
+
 -- places / trip_days / trip_day_places: readable by everyone signed in,
--- writable only where the parent list belongs to you.
+-- writable where the parent list belongs to you OR you're an accepted collaborator on it.
 drop policy if exists "Places are readable by authenticated users" on public.places;
 create policy "Places are readable by authenticated users" on public.places
   for select using (auth.role() = 'authenticated');
 
 drop policy if exists "Owners can manage their places" on public.places;
-create policy "Owners can manage their places" on public.places
+drop policy if exists "Owners and collaborators can manage places" on public.places;
+create policy "Owners and collaborators can manage places" on public.places
   for all
-  using (exists (select 1 from public.lists where lists.id = places.list_id and lists.owner_id = auth.uid()))
-  with check (exists (select 1 from public.lists where lists.id = places.list_id and lists.owner_id = auth.uid()));
+  using (
+    exists (select 1 from public.lists where lists.id = places.list_id and lists.owner_id = auth.uid())
+    or public.is_accepted_list_collaborator(places.list_id)
+  )
+  with check (
+    exists (select 1 from public.lists where lists.id = places.list_id and lists.owner_id = auth.uid())
+    or public.is_accepted_list_collaborator(places.list_id)
+  );
 
 drop policy if exists "Trip days are readable by authenticated users" on public.trip_days;
 create policy "Trip days are readable by authenticated users" on public.trip_days
   for select using (auth.role() = 'authenticated');
 
 drop policy if exists "Owners can manage their trip days" on public.trip_days;
-create policy "Owners can manage their trip days" on public.trip_days
+drop policy if exists "Owners and collaborators can manage trip days" on public.trip_days;
+create policy "Owners and collaborators can manage trip days" on public.trip_days
   for all
-  using (exists (select 1 from public.lists where lists.id = trip_days.list_id and lists.owner_id = auth.uid()))
-  with check (exists (select 1 from public.lists where lists.id = trip_days.list_id and lists.owner_id = auth.uid()));
+  using (
+    exists (select 1 from public.lists where lists.id = trip_days.list_id and lists.owner_id = auth.uid())
+    or public.is_accepted_list_collaborator(trip_days.list_id)
+  )
+  with check (
+    exists (select 1 from public.lists where lists.id = trip_days.list_id and lists.owner_id = auth.uid())
+    or public.is_accepted_list_collaborator(trip_days.list_id)
+  );
 
 drop policy if exists "Trip day places are readable by authenticated users" on public.trip_day_places;
 create policy "Trip day places are readable by authenticated users" on public.trip_day_places
   for select using (auth.role() = 'authenticated');
 
 drop policy if exists "Owners can manage their trip day places" on public.trip_day_places;
-create policy "Owners can manage their trip day places" on public.trip_day_places
+drop policy if exists "Owners and collaborators can manage trip day places" on public.trip_day_places;
+create policy "Owners and collaborators can manage trip day places" on public.trip_day_places
   for all
   using (exists (
     select 1 from public.trip_days
     join public.lists on lists.id = trip_days.list_id
-    where trip_days.id = trip_day_places.day_id and lists.owner_id = auth.uid()
+    where trip_days.id = trip_day_places.day_id
+      and (lists.owner_id = auth.uid() or public.is_accepted_list_collaborator(lists.id))
   ))
   with check (exists (
     select 1 from public.trip_days
     join public.lists on lists.id = trip_days.list_id
-    where trip_days.id = trip_day_places.day_id and lists.owner_id = auth.uid()
+    where trip_days.id = trip_day_places.day_id
+      and (lists.owner_id = auth.uid() or public.is_accepted_list_collaborator(lists.id))
   ));
 
 -- place_attachments / attachment_files: owner-only, full stop. Nobody else can

@@ -1,4 +1,15 @@
-import type { AttachmentFile, Place, PlaceAttachment, PlaceCategory, PlaceTimeRange, TripDay, TripList, User } from '../../types';
+import type {
+  AttachmentFile,
+  GroupMemberStatus,
+  ListCollaborator,
+  Place,
+  PlaceAttachment,
+  PlaceCategory,
+  PlaceTimeRange,
+  TripDay,
+  TripList,
+  User,
+} from '../../types';
 
 // Row shapes as they come back from Postgres (snake_case). Keeping these separate from the
 // app-facing camelCase types in `src/types.ts` means the rest of the app never has to think
@@ -67,6 +78,15 @@ export type PlaceAttachmentRow = {
   id: string;
   place_id: string;
   note: string;
+};
+
+export type ListCollaboratorRow = {
+  list_id: string;
+  user_id: string;
+  status: string;
+  invited_by: string;
+  created_at: string;
+  responded_at: string | null;
 };
 
 export type AttachmentFileRow = {
@@ -143,6 +163,7 @@ export function composeTripList(
   dayPlaceRows: TripDayPlaceRow[],
   attachmentRows: PlaceAttachmentRow[],
   attachmentFileRows: AttachmentFileRow[],
+  collaboratorRows: ListCollaboratorRow[] = [],
 ): TripList {
   const days: TripDay[] = dayRows
     .slice()
@@ -186,6 +207,15 @@ export function composeTripList(
     placeAttachments[attachmentRow.place_id] = { note: attachmentRow.note, files };
   }
 
+  const collaborators: ListCollaborator[] = collaboratorRows.map((row) => ({
+    listId: row.list_id,
+    userId: row.user_id,
+    status: row.status as GroupMemberStatus,
+    invitedBy: row.invited_by,
+    createdAt: row.created_at,
+    respondedAt: row.responded_at ?? undefined,
+  }));
+
   return {
     id: listRow.id,
     ownerId: listRow.owner_id,
@@ -204,5 +234,6 @@ export function composeTripList(
     startDate: listRow.start_date ?? undefined,
     endDate: listRow.end_date ?? undefined,
     placeAttachments,
+    collaborators,
   };
 }

@@ -90,6 +90,18 @@ export type TripList = {
   endDate?: string;
   /** Private attachments per place (booking notes, tickets, confirmations). Visible only to the list owner. */
   placeAttachments?: Record<string, PlaceAttachment>;
+  /** Other users invited to co-edit this list -- see ListCollaborator. Always present (empty array
+   * when nobody's been invited), unlike placeAttachments which is genuinely optional. */
+  collaborators: ListCollaborator[];
+};
+
+export type ListCollaborator = {
+  listId: string;
+  userId: string;
+  status: GroupMemberStatus;
+  invitedBy: string;
+  createdAt: string;
+  respondedAt?: string;
 };
 
 export type Rating = {
