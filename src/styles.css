@@ -1802,6 +1802,28 @@ button.stat-pill {
   background: rgba(255, 255, 255, 0.9);
 }
 
+.expense-base-currency {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.expense-base-currency__label {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.expense-base-currency select {
+  font-weight: 700;
+}
+
+.expense-base-currency small {
+  color: var(--muted);
+}
+
 .expense-detail__members {
   display: flex;
   flex-wrap: wrap;
@@ -1921,6 +1943,42 @@ button.stat-pill {
   font-weight: 700;
 }
 
+.balance-row__amount--editing input {
+  width: 90px;
+}
+
+.balance-row__currency {
+  color: var(--muted);
+}
+
+.settlement-list {
+  display: grid;
+  gap: 8px;
+}
+
+.settlement-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.settlement-row small {
+  display: block;
+  color: var(--muted);
+}
+
+.settlement-row__amount {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
 .expense-form__split {
   display: grid;
   gap: 8px;
@@ -1957,6 +2015,11 @@ button.stat-pill {
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 16px;
+}
+
+.expense-row__actions {
+  display: flex;
+  gap: 4px;
 }
 
 .expense-row__body small {
@@ -2088,6 +2151,53 @@ button.stat-pill {
 
 .bar-chart__value {
   color: var(--muted);
+  white-space: nowrap;
+}
+
+.bar-chart--vertical {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  gap: 14px;
+  height: 180px;
+  padding-top: 8px;
+}
+
+.bar-chart__column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  min-width: 0;
+  flex: 1;
+}
+
+.bar-chart__column .bar-chart__value {
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.bar-chart__column-track {
+  flex: 1;
+  width: 32px;
+  display: flex;
+  align-items: flex-end;
+  border-radius: 999px;
+  background: rgba(74, 74, 74, 0.08);
+  overflow: hidden;
+}
+
+.bar-chart__column-fill {
+  width: 100%;
+  border-radius: 999px;
+}
+
+.bar-chart__column .bar-chart__label {
+  font-size: 0.78rem;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

@@ -29,6 +29,7 @@ import type {
   DraftDay,
   DraftList,
   DraftPlace,
+  Expense,
   ExpenseCategory,
   PageMode,
   Place,
@@ -391,7 +392,14 @@ function AppShell() {
   const [editingExpenseGroupName, setEditingExpenseGroupName] = useState(false);
   const [expenseGroupNameDraft, setExpenseGroupNameDraft] = useState('');
   const [collapsedExpenseCategories, setCollapsedExpenseCategories] = useState<Set<ExpenseCategory>>(new Set());
+  const [changingBaseCurrency, setChangingBaseCurrency] = useState(false);
+  const [baseCurrencyError, setBaseCurrencyError] = useState<string | null>(null);
+  const [settlingKey, setSettlingKey] = useState<string | null>(null);
+  const [settlementAmountDraft, setSettlementAmountDraft] = useState('');
+  const [settlementError, setSettlementError] = useState<string | null>(null);
+  const [settlementSubmitting, setSettlementSubmitting] = useState(false);
   const [addExpenseFormOpen, setAddExpenseFormOpen] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [addExpenseError, setAddExpenseError] = useState<string | null>(null);
   const [addExpenseSubmitting, setAddExpenseSubmitting] = useState(false);
   const [expenseForm, setExpenseForm] = useState({
@@ -656,8 +664,11 @@ function AppShell() {
     settlements: groupSettlements,
     error: groupExpensesError,
     addExpense: addGroupExpense,
+    updateExpense: updateGroupExpense,
     deleteExpense: deleteGroupExpense,
     addSettlement: addGroupSettlement,
+    deleteSettlement: deleteGroupSettlement,
+    changeBaseCurrency: changeGroupBaseCurrency,
   } = useGroupExpenses(expenseGroupDetailId, expenseGroupDetail?.baseCurrency);
 
   const groupBalances = computeBalances(acceptedGroupMemberIds, groupExpenses, groupSettlements);
@@ -672,19 +683,33 @@ function AppShell() {
   }));
   const equalSplitExpenses = groupExpenses.filter((expense) => isEquallySplit(expense));
   const customSplitExpenses = groupExpenses.filter((expense) => !isEquallySplit(expense));
-  const equalSplitMemberTotals = acceptedGroupMembers.map(({ user }, index) => ({
+  // Who fronted the money for equally-split expenses -- distinct from what each person owes
+  // (which is the same for everyone in an equal split, so a pie of *owed* amounts would just show
+  // equal-sized slices and say nothing useful).
+  const equalSplitPaidTotals = acceptedGroupMembers.map(({ user }, index) => ({
     userId: user.id,
     label: user.name,
-    total: equalSplitExpenses.reduce((sum, expense) => {
-      const share = expense.shares.find((entry) => entry.userId === user.id);
-      return sum + (share ? share.amount * expense.exchangeRate : 0);
-    }, 0),
+    total: equalSplitExpenses
+      .filter((expense) => expense.paidBy === user.id)
+      .reduce((sum, expense) => sum + expense.convertedAmount, 0),
     color: defaultColorForIndex(index),
   }));
   const customSplitMemberTotals = acceptedGroupMembers.map(({ user }, index) => ({
     userId: user.id,
     label: user.name,
     total: customSplitExpenses.reduce((sum, expense) => {
+      const share = expense.shares.find((entry) => entry.userId === user.id);
+      return sum + (share ? share.amount * expense.exchangeRate : 0);
+    }, 0),
+    color: defaultColorForIndex(index),
+  }));
+  // Each person's actual cost after splitting -- their owed share across every expense, equal or
+  // custom alike -- as opposed to `groupBalances`, which nets that against what they paid and any
+  // settlements. This is "what did this trip cost me," not "who owes whom."
+  const totalSpentPerMember = acceptedGroupMembers.map(({ user }, index) => ({
+    userId: user.id,
+    label: user.name,
+    total: groupExpenses.reduce((sum, expense) => {
       const share = expense.shares.find((entry) => entry.userId === user.id);
       return sum + (share ? share.amount * expense.exchangeRate : 0);
     }, 0),
@@ -1090,6 +1115,46 @@ function AppShell() {
     await renameExpenseGroup(expenseGroupDetail.id, name);
   }
 
+  async function submitBaseCurrencyChange(baseCurrency: string) {
+    if (!expenseGroupDetail || baseCurrency === expenseGroupDetail.baseCurrency) return;
+    setBaseCurrencyError(null);
+    setChangingBaseCurrency(true);
+    try {
+      await changeGroupBaseCurrency(baseCurrency);
+    } catch (error) {
+      console.error('changeBaseCurrency failed:', error);
+      setBaseCurrencyError(describeQueryError(error));
+    } finally {
+      setChangingBaseCurrency(false);
+    }
+  }
+
+  function startRecordingPayment(suggestion: { fromUser: string; toUser: string; amount: number }) {
+    setSettlingKey(`${suggestion.fromUser}_${suggestion.toUser}`);
+    setSettlementAmountDraft(suggestion.amount.toFixed(2));
+    setSettlementError(null);
+  }
+
+  async function submitSettlement(suggestion: { fromUser: string; toUser: string; amount: number }) {
+    const amount = Number(settlementAmountDraft);
+    if (!amount || amount <= 0) {
+      setSettlementError('Enter a positive amount.');
+      return;
+    }
+
+    setSettlementSubmitting(true);
+    setSettlementError(null);
+    try {
+      await addGroupSettlement(suggestion.fromUser, suggestion.toUser, amount);
+      setSettlingKey(null);
+    } catch (error) {
+      console.error('addSettlement failed:', error);
+      setSettlementError(describeQueryError(error));
+    } finally {
+      setSettlementSubmitting(false);
+    }
+  }
+
   async function deleteCurrentExpenseGroup() {
     if (!expenseGroupDetail) return;
     if (!window.confirm(`Delete "${expenseGroupDetail.name}"? This removes the group and all its expenses for everyone.`)) return;
@@ -1122,6 +1187,25 @@ function AppShell() {
       splitMode: 'equal',
       customAmounts: {},
     });
+    setEditingExpenseId(null);
+    setAddExpenseError(null);
+    setAddExpenseFormOpen(true);
+  }
+
+  function openEditExpenseForm(expense: Expense) {
+    const equalSplit = isEquallySplit(expense);
+    setExpenseForm({
+      description: expense.description,
+      category: expense.category,
+      amount: String(expense.amount),
+      currency: expense.currency,
+      spentAt: expense.spentAt,
+      paidBy: expense.paidBy,
+      participantIds: expense.shares.map((share) => share.userId),
+      splitMode: equalSplit ? 'equal' : 'custom',
+      customAmounts: Object.fromEntries(expense.shares.map((share) => [share.userId, String(share.amount)])),
+    });
+    setEditingExpenseId(expense.id);
     setAddExpenseError(null);
     setAddExpenseFormOpen(true);
   }
@@ -1158,18 +1242,25 @@ function AppShell() {
       return;
     }
 
+    const payload = {
+      paidBy: expenseForm.paidBy,
+      description: expenseForm.description.trim(),
+      category: expenseForm.category,
+      amount,
+      currency: expenseForm.currency,
+      spentAt: expenseForm.spentAt,
+      shares,
+    };
+
     setAddExpenseSubmitting(true);
     try {
-      await addGroupExpense({
-        paidBy: expenseForm.paidBy,
-        description: expenseForm.description.trim(),
-        category: expenseForm.category,
-        amount,
-        currency: expenseForm.currency,
-        spentAt: expenseForm.spentAt,
-        shares,
-      });
+      if (editingExpenseId) {
+        await updateGroupExpense(editingExpenseId, payload);
+      } else {
+        await addGroupExpense(payload);
+      }
       setAddExpenseFormOpen(false);
+      setEditingExpenseId(null);
     } catch (error) {
       console.error('addExpense failed:', error);
       setAddExpenseError(describeQueryError(error));
@@ -1923,6 +2014,11 @@ function AppShell() {
                   <div className="trip-plan-unscheduled__list">
                     {draft.places
                       .filter((place) => !draft.days.some((tripDay) => tripDay.placeIds.includes(place.id)))
+                      // A hotel with check-in/check-out dates is already "scheduled" via its stay
+                      // range (see findHotelForDay) -- it doesn't belong on any single day's
+                      // placeIds, so without this it would sit in Unscheduled forever even though
+                      // it's fully accounted for.
+                      .filter((place) => !(place.category === 'hotel' && place.checkIn && place.checkOut))
                       .map((place) => (
                         <div
                           key={place.id}
@@ -2501,8 +2597,27 @@ function AppShell() {
                   <h2>{expenseGroupDetail.name}</h2>
                 )}
               </div>
-              <span>{expenseGroupDetail.baseCurrency}</span>
+              {expenseGroupDetail.ownerId === data.currentUserId ? (
+                <label className="expense-base-currency">
+                  <span className="expense-base-currency__label">Base currency</span>
+                  <select
+                    value={expenseGroupDetail.baseCurrency}
+                    onChange={(event) => submitBaseCurrencyChange(event.target.value)}
+                    disabled={changingBaseCurrency}
+                  >
+                    {CURRENCIES.map((code) => (
+                      <option key={code} value={code}>
+                        {code}
+                      </option>
+                    ))}
+                  </select>
+                  {changingBaseCurrency ? <small>Updating…</small> : null}
+                </label>
+              ) : (
+                <span>{expenseGroupDetail.baseCurrency}</span>
+              )}
             </div>
+            {baseCurrencyError ? <p className="place-autocomplete__error">{baseCurrencyError}</p> : null}
 
             {groupExpensesError ? (
               <p className="place-autocomplete__error">
@@ -2576,26 +2691,94 @@ function AppShell() {
                 debtSuggestions.map((suggestion) => {
                   const from = data.users.find((user) => user.id === suggestion.fromUser);
                   const to = data.users.find((user) => user.id === suggestion.toUser);
+                  const key = `${suggestion.fromUser}_${suggestion.toUser}`;
+                  const isSettling = settlingKey === key;
                   return (
-                    <div key={`${suggestion.fromUser}-${suggestion.toUser}`} className="balance-row">
+                    <div key={key} className="balance-row">
                       <span>
                         <strong>{from?.name ?? 'Someone'}</strong> owes <strong>{to?.name ?? 'someone'}</strong>
+                        {isSettling ? null : ` · ${expenseGroupDetail.baseCurrency} ${suggestion.amount.toFixed(2)}`}
                       </span>
-                      <span className="balance-row__amount">
-                        {expenseGroupDetail.baseCurrency} {suggestion.amount.toFixed(2)}
-                        <button
-                          className="secondary-button"
-                          type="button"
-                          onClick={() => addGroupSettlement(suggestion.fromUser, suggestion.toUser, suggestion.amount)}
-                        >
-                          Record payment
-                        </button>
-                      </span>
+                      {isSettling ? (
+                        <span className="balance-row__amount balance-row__amount--editing">
+                          <span className="balance-row__currency">{expenseGroupDetail.baseCurrency}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={settlementAmountDraft}
+                            onChange={(event) => setSettlementAmountDraft(event.target.value)}
+                            autoFocus
+                          />
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            onClick={() => setSettlingKey(null)}
+                            disabled={settlementSubmitting}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            className="primary-button"
+                            type="button"
+                            onClick={() => submitSettlement(suggestion)}
+                            disabled={settlementSubmitting}
+                          >
+                            {settlementSubmitting ? 'Recording…' : 'Confirm'}
+                          </button>
+                        </span>
+                      ) : (
+                        <span className="balance-row__amount">
+                          <button className="secondary-button" type="button" onClick={() => startRecordingPayment(suggestion)}>
+                            Record payment
+                          </button>
+                        </span>
+                      )}
                     </div>
                   );
                 })
               )}
             </div>
+            {settlementError ? <p className="place-autocomplete__error">{settlementError}</p> : null}
+
+            {groupSettlements.length > 0 ? (
+              <>
+                <div className="section-heading">
+                  <h3>Payment history</h3>
+                </div>
+                <div className="settlement-list">
+                  {groupSettlements.map((settlement) => {
+                    const from = data.users.find((user) => user.id === settlement.fromUser);
+                    const to = data.users.find((user) => user.id === settlement.toUser);
+                    const canDelete =
+                      settlement.fromUser === data.currentUserId ||
+                      settlement.toUser === data.currentUserId ||
+                      expenseGroupDetail.ownerId === data.currentUserId;
+                    return (
+                      <div key={settlement.id} className="settlement-row">
+                        <span>
+                          <strong>{from?.name ?? 'Someone'}</strong> paid <strong>{to?.name ?? 'someone'}</strong>
+                          <small>{new Date(settlement.createdAt).toLocaleDateString()}</small>
+                        </span>
+                        <span className="settlement-row__amount">
+                          {expenseGroupDetail.baseCurrency} {settlement.amount.toFixed(2)}
+                          {canDelete ? (
+                            <button
+                              className="icon-button"
+                              type="button"
+                              onClick={() => deleteGroupSettlement(settlement.id)}
+                              aria-label="Delete payment record"
+                            >
+                              ×
+                            </button>
+                          ) : null}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : null}
 
             {groupExpenses.length > 0 ? (
               <div className="expense-charts">
@@ -2612,10 +2795,19 @@ function AppShell() {
                 </div>
 
                 <div className="expense-chart-card">
-                  <h4>Equal splits, per person</h4>
+                  <h4>Equal splits, paid by</h4>
                   <PieChart
-                    slices={equalSplitMemberTotals.map((entry) => ({ label: entry.label, total: entry.total, color: entry.color }))}
+                    slices={equalSplitPaidTotals.map((entry) => ({ label: entry.label, total: entry.total, color: entry.color }))}
                     currency={expenseGroupDetail.baseCurrency}
+                  />
+                </div>
+
+                <div className="expense-chart-card">
+                  <h4>Total spent per person</h4>
+                  <BarChart
+                    bars={totalSpentPerMember.map((entry) => ({ label: entry.label, total: entry.total, color: entry.color }))}
+                    currency={expenseGroupDetail.baseCurrency}
+                    orientation="vertical"
                   />
                 </div>
 
@@ -2766,11 +2958,18 @@ function AppShell() {
                 {addExpenseError ? <p className="form-grid__full place-autocomplete__error">{addExpenseError}</p> : null}
 
                 <div className="form-grid__full modal-actions">
-                  <button className="secondary-button" type="button" onClick={() => setAddExpenseFormOpen(false)}>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => {
+                      setAddExpenseFormOpen(false);
+                      setEditingExpenseId(null);
+                    }}
+                  >
                     Cancel
                   </button>
                   <button className="primary-button" type="submit" disabled={addExpenseSubmitting}>
-                    {addExpenseSubmitting ? 'Adding…' : 'Add expense'}
+                    {addExpenseSubmitting ? 'Saving…' : editingExpenseId ? 'Save changes' : 'Add expense'}
                   </button>
                 </div>
               </form>
@@ -2813,14 +3012,24 @@ function AppShell() {
                                 </small>
                               </div>
                               {expense.paidBy === data.currentUserId || expenseGroupDetail.ownerId === data.currentUserId ? (
-                                <button
-                                  className="icon-button"
-                                  type="button"
-                                  onClick={() => deleteGroupExpense(expense.id)}
-                                  aria-label="Delete expense"
-                                >
-                                  ×
-                                </button>
+                                <div className="expense-row__actions">
+                                  <button
+                                    className="icon-button"
+                                    type="button"
+                                    onClick={() => openEditExpenseForm(expense)}
+                                    aria-label="Edit expense"
+                                  >
+                                    ✎
+                                  </button>
+                                  <button
+                                    className="icon-button"
+                                    type="button"
+                                    onClick={() => deleteGroupExpense(expense.id)}
+                                    aria-label="Delete expense"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
                               ) : null}
                             </div>
                           );
@@ -3709,8 +3918,38 @@ function PieChart({ slices, currency }: { slices: ChartSlice[]; currency: string
   );
 }
 
-function BarChart({ bars, currency }: { bars: ChartSlice[]; currency: string }) {
+function BarChart({
+  bars,
+  currency,
+  orientation = 'horizontal',
+}: {
+  bars: ChartSlice[];
+  currency: string;
+  orientation?: 'horizontal' | 'vertical';
+}) {
   const max = Math.max(...bars.map((bar) => bar.total), 0.01);
+
+  if (orientation === 'vertical') {
+    return (
+      <div className="bar-chart bar-chart--vertical">
+        {bars.map((bar) => (
+          <div key={bar.label} className="bar-chart__column">
+            <span className="bar-chart__value">
+              {currency} {bar.total.toFixed(2)}
+            </span>
+            <div className="bar-chart__column-track">
+              <div
+                className="bar-chart__column-fill"
+                style={{ height: `${(bar.total / max) * 100}%`, background: bar.color }}
+              />
+            </div>
+            <span className="bar-chart__label">{bar.label}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="bar-chart">
       {bars.map((bar) => (
