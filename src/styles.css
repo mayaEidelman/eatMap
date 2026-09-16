@@ -1231,6 +1231,75 @@ button.stat-pill {
   grid-column: 1 / -1;
 }
 
+.visibility-toggle {
+  display: inline-flex;
+  width: fit-content;
+  cursor: pointer;
+}
+
+.visibility-toggle__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.visibility-toggle__track {
+  position: relative;
+  display: flex;
+  width: 118px;
+  height: 30px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: linear-gradient(to right, var(--ink) 50%, var(--accent-hot) 50%);
+  box-shadow: var(--shadow);
+}
+
+.visibility-toggle__option {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.visibility-toggle__option--public {
+  justify-content: flex-start;
+  padding-left: 10px;
+}
+
+.visibility-toggle__option--private {
+  justify-content: flex-end;
+  padding-right: 10px;
+}
+
+.visibility-toggle__knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s ease;
+}
+
+.visibility-toggle__input:checked ~ .visibility-toggle__track .visibility-toggle__knob {
+  transform: translateX(88px);
+}
+
+.visibility-toggle__input:focus-visible ~ .visibility-toggle__track {
+  outline: 2px solid var(--accent-hot);
+  outline-offset: 2px;
+}
+
 .modal-actions {
   justify-content: flex-end;
 }

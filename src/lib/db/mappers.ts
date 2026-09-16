@@ -42,6 +42,7 @@ export type ListRow = {
   color: string | null;
   start_date: string | null;
   end_date: string | null;
+  is_private: boolean;
 };
 
 export type PlaceRow = {
@@ -235,5 +236,6 @@ export function composeTripList(
     endDate: listRow.end_date ?? undefined,
     placeAttachments,
     collaborators,
+    isPrivate: listRow.is_private,
   };
 }

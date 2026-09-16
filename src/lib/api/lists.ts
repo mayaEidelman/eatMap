@@ -164,6 +164,7 @@ export async function createList(ownerId: string, draft: DraftList): Promise<str
     color: draft.color || null,
     start_date: draft.startDate || null,
     end_date: draft.endDate || null,
+    is_private: draft.isPrivate ?? false,
   });
   if (error) throw error;
 
@@ -212,6 +213,7 @@ export async function updateList(listId: string, draft: DraftList): Promise<void
       color: draft.color || null,
       start_date: draft.startDate || null,
       end_date: draft.endDate || null,
+      is_private: draft.isPrivate ?? false,
     })
     .eq('id', listId);
   if (error) throw error;

@@ -220,4 +220,5 @@ export const emptyDraft: DraftList = {
   days: [],
   season: 'summer',
   budget: 'mid-range',
+  isPrivate: false,
 };

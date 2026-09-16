@@ -91,13 +91,17 @@ create table if not exists public.lists (
   created_at timestamptz not null default now(),
   color text,
   start_date date,
-  end_date date
+  end_date date,
+  -- Private lists are excluded from Explore and from every other user's view of the owner's
+  -- profile -- enforced below at the RLS layer (see can_view_list()), not just hidden in the UI.
+  is_private boolean not null default false
 );
 
 -- Safe to re-run against a database that already has this table from before these columns existed.
 alter table public.lists add column if not exists color text;
 alter table public.lists add column if not exists start_date date;
 alter table public.lists add column if not exists end_date date;
+alter table public.lists add column if not exists is_private boolean not null default false;
 
 create index if not exists lists_owner_id_idx on public.lists (owner_id);
 
@@ -317,9 +321,29 @@ as $$
   );
 $$;
 
+-- A private list is visible only to its owner and its accepted collaborators; a public one is
+-- visible to anyone signed in, same as before. Used by lists' own SELECT policy below as well as
+-- places/trip_days/trip_day_places, so a private list's contents can't be read around the edges
+-- (e.g. querying `places` directly) even though those tables have no owner_id/is_private of their
+-- own. Security definer so it can read `lists` from inside `lists`' own policy without recursing.
+create or replace function public.can_view_list(lid uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.lists
+    where id = lid
+      and (not is_private or owner_id = auth.uid() or public.is_accepted_list_collaborator(id))
+  );
+$$;
+
 drop policy if exists "Lists are readable by authenticated users" on public.lists;
-create policy "Lists are readable by authenticated users" on public.lists
-  for select using (auth.role() = 'authenticated');
+drop policy if exists "Lists are readable if public or permitted" on public.lists;
+create policy "Lists are readable if public or permitted" on public.lists
+  for select using (public.can_view_list(id));
 
 drop policy if exists "Owners can insert lists" on public.lists;
 create policy "Owners can insert lists" on public.lists
@@ -362,11 +386,12 @@ drop policy if exists "Members and owners can delete list collaborator rows" on 
 create policy "Members and owners can delete list collaborator rows" on public.list_collaborators
   for delete using (auth.uid() = user_id or public.is_list_owner(list_id));
 
--- places / trip_days / trip_day_places: readable by everyone signed in,
--- writable where the parent list belongs to you OR you're an accepted collaborator on it.
+-- places / trip_days / trip_day_places: readable wherever the parent list is (public, or you're
+-- the owner/an accepted collaborator on a private one) -- writable under that same condition.
 drop policy if exists "Places are readable by authenticated users" on public.places;
-create policy "Places are readable by authenticated users" on public.places
-  for select using (auth.role() = 'authenticated');
+drop policy if exists "Places are readable if their list is" on public.places;
+create policy "Places are readable if their list is" on public.places
+  for select using (public.can_view_list(places.list_id));
 
 drop policy if exists "Owners can manage their places" on public.places;
 drop policy if exists "Owners and collaborators can manage places" on public.places;
@@ -382,8 +407,9 @@ create policy "Owners and collaborators can manage places" on public.places
   );
 
 drop policy if exists "Trip days are readable by authenticated users" on public.trip_days;
-create policy "Trip days are readable by authenticated users" on public.trip_days
-  for select using (auth.role() = 'authenticated');
+drop policy if exists "Trip days are readable if their list is" on public.trip_days;
+create policy "Trip days are readable if their list is" on public.trip_days
+  for select using (public.can_view_list(trip_days.list_id));
 
 drop policy if exists "Owners can manage their trip days" on public.trip_days;
 drop policy if exists "Owners and collaborators can manage trip days" on public.trip_days;
@@ -399,8 +425,12 @@ create policy "Owners and collaborators can manage trip days" on public.trip_day
   );
 
 drop policy if exists "Trip day places are readable by authenticated users" on public.trip_day_places;
-create policy "Trip day places are readable by authenticated users" on public.trip_day_places
-  for select using (auth.role() = 'authenticated');
+drop policy if exists "Trip day places are readable if their list is" on public.trip_day_places;
+create policy "Trip day places are readable if their list is" on public.trip_day_places
+  for select using (exists (
+    select 1 from public.trip_days
+    where trip_days.id = trip_day_places.day_id and public.can_view_list(trip_days.list_id)
+  ));
 
 drop policy if exists "Owners can manage their trip day places" on public.trip_day_places;
 drop policy if exists "Owners and collaborators can manage trip day places" on public.trip_day_places;

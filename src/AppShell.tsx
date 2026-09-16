@@ -228,6 +228,7 @@ function buildListDraft(list?: TripList): DraftList {
     color: list.color,
     startDate: list.startDate,
     endDate: list.endDate,
+    isPrivate: list.isPrivate,
   };
 }
 
@@ -609,7 +610,13 @@ function AppShell() {
     }));
   }, []);
 
-  const exploreLists = useMemo(() => (data ? filterByQuery(data.lists, search) : []), [data, search]);
+  // Private lists never show in Explore, even to their own owner -- RLS already keeps other
+  // users' private lists out of `data.lists` entirely, but the owner's own private rows still come
+  // through (they need those elsewhere, e.g. "My lists"), so this filters them back out here.
+  const exploreLists = useMemo(
+    () => (data ? filterByQuery(data.lists.filter((list) => !list.isPrivate), search) : []),
+    [data, search],
+  );
 
   const accountLists = useMemo(() => (data ? data.lists.filter((list) => list.ownerId === data.currentUserId) : []), [data]);
 
@@ -2312,6 +2319,20 @@ function AppShell() {
                   <option value="mixed">mixed</option>
                 </select>
               </label>
+              <label className="form-grid__full visibility-toggle">
+                <input
+                  type="checkbox"
+                  className="visibility-toggle__input"
+                  checked={Boolean(draft.isPrivate)}
+                  onChange={(event) => setDraft((current) => ({ ...current, isPrivate: event.target.checked }))}
+                />
+                <span className="visibility-toggle__track">
+                  <span className="visibility-toggle__option visibility-toggle__option--public">Public</span>
+                  <span className="visibility-toggle__option visibility-toggle__option--private">Private</span>
+                  <span className="visibility-toggle__knob" />
+                </span>
+              </label>
+
               {listFormError ? <p className="form-grid__full place-autocomplete__error">{listFormError}</p> : null}
               <div className="form-grid__full modal-actions">
                 <button className="secondary-button" type="button" onClick={() => setComposerOpen(false)} disabled={listFormSubmitting}>
