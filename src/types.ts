@@ -90,6 +90,22 @@ export type TripList = {
   endDate?: string;
   /** Private attachments per place (booking notes, tickets, confirmations). Visible only to the list owner. */
   placeAttachments?: Record<string, PlaceAttachment>;
+  /** Other users invited to co-edit this list -- see ListCollaborator. Always present (empty array
+   * when nobody's been invited), unlike placeAttachments which is genuinely optional. */
+  collaborators: ListCollaborator[];
+  /** When true, hidden from Explore and from every other user's view of the owner's profile --
+   * enforced by RLS (see can_view_list() in schema.sql), not just hidden client-side. Optional/falsy
+   * means public, matching lists saved before this column existed. */
+  isPrivate?: boolean;
+};
+
+export type ListCollaborator = {
+  listId: string;
+  userId: string;
+  status: GroupMemberStatus;
+  invitedBy: string;
+  createdAt: string;
+  respondedAt?: string;
 };
 
 export type Rating = {
@@ -198,6 +214,7 @@ export type DraftList = {
   color?: string;
   startDate?: string;
   endDate?: string;
+  isPrivate?: boolean;
 };
 
 export type ProfileDraft = {

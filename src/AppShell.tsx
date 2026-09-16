@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { Compass, DollarSign, Map as MapIcon, MessageCircle, Trash2, User as UserIcon } from 'lucide-react';
+import { Compass, DollarSign, Map as MapIcon, MessageCircle, Plus, Search, Trash2, User as UserIcon, UserPlus } from 'lucide-react';
 import { ImportPlacesModal } from './components/ImportPlacesModal';
 import { MapPanel } from './components/MapPanel';
 import { PlaceAutocomplete, type PlaceSearchResult } from './components/PlaceAutocomplete';
@@ -44,6 +44,9 @@ import type {
 } from './types';
 
 const DEFAULT_COVER = 'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?q=80&w=1200&auto=format&fit=crop';
+
+const RECENTLY_WATCHED_KEY = 'eatmap:recently-watched-lists';
+const RECENTLY_WATCHED_LIMIT = 3;
 
 /** Places actually assigned to some day -- excludes places saved to the list but never dragged
  * into the trip plan, so "All days" in the timeline means "everything scheduled," not
@@ -225,6 +228,7 @@ function buildListDraft(list?: TripList): DraftList {
     color: list.color,
     startDate: list.startDate,
     endDate: list.endDate,
+    isPrivate: list.isPrivate,
   };
 }
 
@@ -334,6 +338,19 @@ function parseExpenseInviteMessage(text: string): { groupId: string; text: strin
   return { groupId: match[1], text: text.slice(match[0].length).trim() };
 }
 
+// Same tagged-DM-message trick as expense invites, for inviting a collaborator to co-edit a list.
+const LIST_INVITE_TAG = /^\[\[list-invite:([0-9a-fA-F-]{36})\]\]/;
+
+function buildListInviteMessage(listId: string, listTitle: string): string {
+  return `[[list-invite:${listId}]]Invited you to co-edit the list "${listTitle}".`;
+}
+
+function parseListInviteMessage(text: string): { listId: string; text: string } | null {
+  const match = text.match(LIST_INVITE_TAG);
+  if (!match) return null;
+  return { listId: match[1], text: text.slice(match[0].length).trim() };
+}
+
 function AppShell() {
   const { currentUserId, isAuthenticated, isLoading: authLoading } = useAuthSession();
   const { data, isLoading: dataLoading, error: dataError } = useAppData(currentUserId);
@@ -380,6 +397,14 @@ function AppShell() {
   const [inspectedPlaceId, setInspectedPlaceId] = useState<string | null>(null);
   const [openTimelineListIds, setOpenTimelineListIds] = useState<Set<string>>(new Set());
   const [selectedDayByListId, setSelectedDayByListId] = useState<Record<string, string | null>>({});
+  const [recentlyWatchedListIds, setRecentlyWatchedListIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(RECENTLY_WATCHED_KEY);
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const [expenseGroupDetailId, setExpenseGroupDetailId] = useState<string | null>(null);
   const [newExpenseGroupOpen, setNewExpenseGroupOpen] = useState(false);
@@ -389,6 +414,8 @@ function AppShell() {
   const [newExpenseGroupError, setNewExpenseGroupError] = useState<string | null>(null);
   const [newExpenseGroupSubmitting, setNewExpenseGroupSubmitting] = useState(false);
   const [inviteSearchQuery, setInviteSearchQuery] = useState('');
+  const [listInviteSearchQuery, setListInviteSearchQuery] = useState('');
+  const [listCollaboratorsModalOpen, setListCollaboratorsModalOpen] = useState(false);
   const [editingExpenseGroupName, setEditingExpenseGroupName] = useState(false);
   const [expenseGroupNameDraft, setExpenseGroupNameDraft] = useState('');
   const [collapsedExpenseCategories, setCollapsedExpenseCategories] = useState<Set<ExpenseCategory>>(new Set());
@@ -413,6 +440,14 @@ function AppShell() {
     splitMode: 'equal' as 'equal' | 'custom',
     customAmounts: {} as Record<string, string>,
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RECENTLY_WATCHED_KEY, JSON.stringify(recentlyWatchedListIds));
+    } catch {
+      // Best-effort persistence -- private browsing/full storage shouldn't break the feature.
+    }
+  }, [recentlyWatchedListIds]);
 
   const currentUser = data ? data.users.find((user) => user.id === data.currentUserId) : undefined;
   const selectedList = data ? data.lists.find((list) => list.id === selectedListId) ?? data.lists[0] : undefined;
@@ -575,7 +610,13 @@ function AppShell() {
     }));
   }, []);
 
-  const exploreLists = useMemo(() => (data ? filterByQuery(data.lists, search) : []), [data, search]);
+  // Private lists never show in Explore, even to their own owner -- RLS already keeps other
+  // users' private lists out of `data.lists` entirely, but the owner's own private rows still come
+  // through (they need those elsewhere, e.g. "My lists"), so this filters them back out here.
+  const exploreLists = useMemo(
+    () => (data ? filterByQuery(data.lists.filter((list) => !list.isPrivate), search) : []),
+    [data, search],
+  );
 
   const accountLists = useMemo(() => (data ? data.lists.filter((list) => list.ownerId === data.currentUserId) : []), [data]);
 
@@ -589,7 +630,44 @@ function AppShell() {
     [data],
   );
 
-  const myMapLists = useMemo(() => [...accountLists, ...savedLists], [accountLists, savedLists]);
+  // Lists someone else owns but invited the current user to co-edit, and that invite has been
+  // accepted. Kept separate from savedLists since "can edit" and "bookmarked" are different
+  // relationships to a list, even though both show up as pins on your own map.
+  const collaboratingLists = useMemo(
+    () =>
+      data
+        ? data.lists.filter(
+            (list) =>
+              list.ownerId !== data.currentUserId &&
+              list.collaborators.some((collaborator) => collaborator.userId === data.currentUserId && collaborator.status === 'accepted'),
+          )
+        : [],
+    [data],
+  );
+
+  // Lists viewed via "Show on map" that the viewer neither owns, saved, nor collaborates on.
+  // Filtered at render (rather than pruned from storage) so a list that later gets saved/joined
+  // simply stops matching here, with no risk of appearing in more than one section at once.
+  const recentlyWatchedLists = useMemo(
+    () =>
+      data
+        ? recentlyWatchedListIds
+            .map((id) => data.lists.find((list) => list.id === id))
+            .filter((list): list is TripList => Boolean(list))
+            .filter(
+              (list) =>
+                list.ownerId !== data.currentUserId &&
+                !isSaved(data.savedLists, data.currentUserId, list.id) &&
+                !list.collaborators.some((collaborator) => collaborator.userId === data.currentUserId && collaborator.status === 'accepted'),
+            )
+        : [],
+    [data, recentlyWatchedListIds],
+  );
+
+  const myMapLists = useMemo(
+    () => [...accountLists, ...collaboratingLists, ...savedLists, ...recentlyWatchedLists],
+    [accountLists, collaboratingLists, savedLists, recentlyWatchedLists],
+  );
 
   // When a list's sidebar timeline is open and a specific day is picked, the map should only
   // show that day's places; closed (or open with no day picked, i.e. "all days") shows everything.
@@ -614,6 +692,30 @@ function AppShell() {
   const listDetail = data ? data.lists.find((list) => list.id === listDetailId) ?? null : null;
   const listDetailOwner = data && listDetail ? data.users.find((user) => user.id === listDetail.ownerId) : undefined;
   const inspectedPlace = listDetail?.places.find((place) => place.id === inspectedPlaceId) ?? null;
+
+  const listDetailIsOwner = Boolean(data && listDetail && listDetail.ownerId === data.currentUserId);
+  const listDetailCollaboratorEntries =
+    data && listDetail
+      ? listDetail.collaborators
+          .map((collaborator) => ({ collaborator, user: data.users.find((user) => user.id === collaborator.userId) }))
+          .filter((entry): entry is { collaborator: (typeof listDetail.collaborators)[number]; user: AppData['users'][number] } =>
+            Boolean(entry.user),
+          )
+      : [];
+  const listDetailAcceptedCollaborators = listDetailCollaboratorEntries.filter(({ collaborator }) => collaborator.status === 'accepted');
+  const listDetailPendingCollaborators = listDetailCollaboratorEntries.filter(({ collaborator }) => collaborator.status === 'invited');
+  const listDetailCanEdit =
+    listDetailIsOwner || (data ? listDetailAcceptedCollaborators.some(({ user }) => user.id === data.currentUserId) : false);
+  const listInviteCandidates =
+    data && listDetail
+      ? data.users.filter((user) => user.id !== listDetail.ownerId && !listDetail.collaborators.some((c) => c.userId === user.id))
+      : [];
+  const normalizedListInviteSearch = listInviteSearchQuery.trim().toLowerCase();
+  const listInviteSearchResults = normalizedListInviteSearch
+    ? listInviteCandidates.filter(
+        (user) => user.name.toLowerCase().includes(normalizedListInviteSearch) || user.handle.toLowerCase().includes(normalizedListInviteSearch),
+      )
+    : [];
 
   const mapSearchPlaceSaved = useMemo(
     () => (mapSearchPlace ? Boolean(findDuplicatePlace(accountLists.flatMap((list) => list.places), mapSearchPlace)) : false),
@@ -900,6 +1002,13 @@ function AppShell() {
     setComposerOpen(true);
   }
 
+  async function submitListInvite(userId: string) {
+    if (!listDetail) return;
+    await actions.inviteListCollaborator(listDetail.id, userId);
+    await sendDmMessage(userId, buildListInviteMessage(listDetail.id, listDetail.title));
+    setListInviteSearchQuery('');
+  }
+
   function handleMapPlaceFound(place: PlaceSearchResult) {
     setMapSearchPlace(place);
     setSaveToListOpen(false);
@@ -946,6 +1055,8 @@ function AppShell() {
 
   function openListDetail(listId: string) {
     setListDetailId(listId);
+    setListCollaboratorsModalOpen(false);
+    setListInviteSearchQuery('');
   }
 
   function toggleListTimeline(listId: string) {
@@ -961,6 +1072,13 @@ function AppShell() {
   }
 
   function showListOnMap(listId: string) {
+    const list = data?.lists.find((item) => item.id === listId);
+    const isOwned = list?.ownerId === data?.currentUserId;
+    const alreadySaved = data ? isSaved(data.savedLists, data.currentUserId, listId) : false;
+    if (list && !isOwned && !alreadySaved) {
+      setRecentlyWatchedListIds((current) => [listId, ...current.filter((id) => id !== listId)].slice(0, RECENTLY_WATCHED_LIMIT));
+    }
+
     setSelectedListId(listId);
     setPage('home');
     setListDetailId(null);
@@ -1388,6 +1506,30 @@ function AppShell() {
                 </div>
               </div>
 
+              {collaboratingLists.length > 0 ? (
+                <div className="sidebar__section">
+                  <div className="section-heading">
+                    <h3>Collaborating</h3>
+                    <span>{collaboratingLists.length}</span>
+                  </div>
+                  <div className="account-list-sidebar">
+                    {collaboratingLists.map((list) => (
+                      <SidebarListItem
+                        key={list.id}
+                        list={list}
+                        active={list.id === selectedListId}
+                        onSelect={() => setSelectedListId(list.id)}
+                        onView={() => openListDetail(list.id)}
+                        timelineOpen={openTimelineListIds.has(list.id)}
+                        onToggleTimeline={() => toggleListTimeline(list.id)}
+                        selectedDayId={selectedDayByListId[list.id] ?? null}
+                        onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               <div className="sidebar__section">
                 <div className="section-heading">
                   <h3>Saved lists</h3>
@@ -1413,6 +1555,30 @@ function AppShell() {
                   )}
                 </div>
               </div>
+
+              {recentlyWatchedLists.length > 0 ? (
+                <div className="sidebar__section">
+                  <div className="section-heading">
+                    <h3>Recently watched</h3>
+                    <span>{recentlyWatchedLists.length}</span>
+                  </div>
+                  <div className="account-list-sidebar">
+                    {recentlyWatchedLists.map((list) => (
+                      <SidebarListItem
+                        key={list.id}
+                        list={list}
+                        active={list.id === selectedListId}
+                        onSelect={() => setSelectedListId(list.id)}
+                        onView={() => openListDetail(list.id)}
+                        timelineOpen={openTimelineListIds.has(list.id)}
+                        onToggleTimeline={() => toggleListTimeline(list.id)}
+                        selectedDayId={selectedDayByListId[list.id] ?? null}
+                        onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </aside>
           ) : (
             <div className="map-search-float">
@@ -1432,7 +1598,16 @@ function AppShell() {
                 aria-label="Search places"
                 aria-expanded={mapSearchPopoverOpen}
               >
-                🔍
+                <Search aria-hidden="true" size={19} strokeWidth={1.75} />
+              </button>
+              <button
+                className="map-search-float__button icon-button"
+                type="button"
+                onClick={openCreateList}
+                aria-label="Create a new list"
+                title="Create a new list"
+              >
+                <Plus aria-hidden="true" size={19} strokeWidth={1.75} />
               </button>
 
               {mapSearchPopoverOpen ? (
@@ -1524,21 +1699,32 @@ function AppShell() {
                 )
                 .map((message) => {
                   const isMine = message.fromId === data.currentUserId;
-                  const invite = parseExpenseInviteMessage(message.text);
-                  const inviteGroup = invite ? expenseGroups.find((group) => group.id === invite.groupId) : undefined;
+                  const expenseInvite = parseExpenseInviteMessage(message.text);
+                  const listInvite = !expenseInvite ? parseListInviteMessage(message.text) : null;
+                  const inviteGroup = expenseInvite ? expenseGroups.find((group) => group.id === expenseInvite.groupId) : undefined;
+                  const inviteList = listInvite ? data.lists.find((list) => list.id === listInvite.listId) : undefined;
                   // Invites always flow inviter -> invitee, so the invitee is `toId` regardless of
                   // which side of the conversation is currently looking at the bubble. Looking up
-                  // `myExpenseMembership` here (the viewer's own status) was the bug: it made the
-                  // sender's own copy of the message read "accepted" immediately, because the
-                  // *sender* is auto-accepted into their own group at creation time.
-                  const inviteeStatus = inviteGroup?.members.find((member) => member.userId === message.toId)?.status;
-                  // A decline deletes the membership row (see respondToInvite), so a found group
-                  // with no matching member for the invitee means they declined.
-                  const inviteeDeclined = Boolean(invite && inviteGroup && !inviteeStatus);
+                  // the *viewer's own* membership here was the bug: it made the sender's own copy
+                  // of the message read "accepted" immediately, because the sender is auto-accepted
+                  // into their own expense group at creation time (and, for a list, could easily be
+                  // an accepted collaborator on some other list already).
+                  const inviteeStatus = inviteGroup
+                    ? inviteGroup.members.find((member) => member.userId === message.toId)?.status
+                    : inviteList?.collaborators.find((collaborator) => collaborator.userId === message.toId)?.status;
+                  // A decline deletes the membership/collaborator row, so a found group/list with
+                  // no matching invitee row means they declined.
+                  const inviteeDeclined = Boolean((inviteGroup || inviteList) && !inviteeStatus);
+                  const hasInvite = Boolean(inviteGroup || inviteList);
+                  const bubbleText = expenseInvite?.text ?? listInvite?.text ?? message.text;
+                  const respond = (status: 'accepted' | 'declined') => {
+                    if (inviteGroup) respondToExpenseInvite(inviteGroup.id, status);
+                    else if (inviteList) actions.respondToListInvite(inviteList.id, status);
+                  };
                   return (
                     <div key={message.id} className={`dm-bubble${isMine ? ' dm-bubble--mine' : ''}`}>
-                      {invite ? invite.text : message.text}
-                      {invite && inviteGroup ? (
+                      {bubbleText}
+                      {hasInvite ? (
                         isMine ? (
                           <div className="dm-bubble__actions dm-bubble__actions--blocked">
                             <span className={`dm-bubble__action-pill${inviteeDeclined ? ' dm-bubble__action-pill--chosen' : ''}`}>
@@ -1552,18 +1738,10 @@ function AppShell() {
                           </div>
                         ) : inviteeStatus === 'invited' ? (
                           <div className="dm-bubble__actions">
-                            <button
-                              className="secondary-button"
-                              type="button"
-                              onClick={() => respondToExpenseInvite(inviteGroup.id, 'declined')}
-                            >
+                            <button className="secondary-button" type="button" onClick={() => respond('declined')}>
                               Decline
                             </button>
-                            <button
-                              className="primary-button"
-                              type="button"
-                              onClick={() => respondToExpenseInvite(inviteGroup.id, 'accepted')}
-                            >
+                            <button className="primary-button" type="button" onClick={() => respond('accepted')}>
                               Accept
                             </button>
                           </div>
@@ -2141,6 +2319,20 @@ function AppShell() {
                   <option value="mixed">mixed</option>
                 </select>
               </label>
+              <label className="form-grid__full visibility-toggle">
+                <input
+                  type="checkbox"
+                  className="visibility-toggle__input"
+                  checked={Boolean(draft.isPrivate)}
+                  onChange={(event) => setDraft((current) => ({ ...current, isPrivate: event.target.checked }))}
+                />
+                <span className="visibility-toggle__track">
+                  <span className="visibility-toggle__option visibility-toggle__option--public">Public</span>
+                  <span className="visibility-toggle__option visibility-toggle__option--private">Private</span>
+                  <span className="visibility-toggle__knob" />
+                </span>
+              </label>
+
               {listFormError ? <p className="form-grid__full place-autocomplete__error">{listFormError}</p> : null}
               <div className="form-grid__full modal-actions">
                 <button className="secondary-button" type="button" onClick={() => setComposerOpen(false)} disabled={listFormSubmitting}>
@@ -2320,6 +2512,25 @@ function AppShell() {
             <p className="detail-panel__description">{listDetail.description}</p>
 
             <div className="owner-card">
+              {listDetailIsOwner || listDetailCanEdit ? (
+                <button
+                  type="button"
+                  className={`collaborator-stack${listDetailAcceptedCollaborators.length > 0 ? ' collaborator-stack--filled' : ''}`}
+                  onClick={() => setListCollaboratorsModalOpen(true)}
+                  aria-label="Who can edit this list"
+                  title="Who can edit"
+                >
+                  {listDetailAcceptedCollaborators.length > 0 ? (
+                    <span className="collaborator-stack__avatars">
+                      {listDetailAcceptedCollaborators.slice(0, 3).map(({ user }) => (
+                        <Avatar key={user.id} user={user} className="collaborator-stack__avatar" />
+                      ))}
+                    </span>
+                  ) : (
+                    <UserPlus aria-hidden="true" size={16} strokeWidth={1.75} />
+                  )}
+                </button>
+              ) : null}
               <button
                 className="owner-card__hit"
                 type="button"
@@ -2331,24 +2542,26 @@ function AppShell() {
                   <p>{listDetailOwner?.handle ?? 'no handle'}</p>
                 </div>
               </button>
-              {listDetailOwner?.id === currentUser.id ? (
-                <button className="secondary-button" type="button" onClick={() => openEditList(listDetail)}>
-                  Edit list
-                </button>
-              ) : (
-                <div className="owner-card__actions">
-                  <button className="secondary-button" type="button" onClick={() => listDetailOwner && toggleFollow(listDetailOwner.id)}>
-                    {listDetailOwner && isFollowing(data.follows, data.currentUserId, listDetailOwner.id) ? 'Following' : 'Follow'}
+              <div className="owner-card__side">
+                {listDetailCanEdit ? (
+                  <button className="secondary-button" type="button" onClick={() => openEditList(listDetail)}>
+                    Edit list
                   </button>
-                  <button
-                    className={`bookmark-button${isSaved(data.savedLists, data.currentUserId, listDetail.id) ? ' bookmark-button--active' : ''}`}
-                    type="button"
-                    onClick={() => toggleSaveList(listDetail.id)}
-                  >
-                    {isSaved(data.savedLists, data.currentUserId, listDetail.id) ? '★ Saved' : '☆ Save'}
-                  </button>
-                </div>
-              )}
+                ) : (
+                  <div className="owner-card__actions">
+                    <button className="secondary-button" type="button" onClick={() => listDetailOwner && toggleFollow(listDetailOwner.id)}>
+                      {listDetailOwner && isFollowing(data.follows, data.currentUserId, listDetailOwner.id) ? 'Following' : 'Follow'}
+                    </button>
+                    <button
+                      className={`bookmark-button${isSaved(data.savedLists, data.currentUserId, listDetail.id) ? ' bookmark-button--active' : ''}`}
+                      type="button"
+                      onClick={() => toggleSaveList(listDetail.id)}
+                    >
+                      {isSaved(data.savedLists, data.currentUserId, listDetail.id) ? '★ Saved' : '☆ Save'}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             <TripPlanView
@@ -2390,6 +2603,95 @@ function AppShell() {
                 Show on map
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {listCollaboratorsModalOpen && listDetail ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setListCollaboratorsModalOpen(false)}>
+          <div className="modal panel" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="section-heading">
+              <h3>Who can edit</h3>
+              <button className="icon-button" type="button" onClick={() => setListCollaboratorsModalOpen(false)} aria-label="Close">
+                ×
+              </button>
+            </div>
+
+            <div className="list-collaborators__roster">
+              <button
+                type="button"
+                className="list-collaborators__person"
+                onClick={() => listDetailOwner && openProfile(listDetailOwner.id)}
+              >
+                <Avatar user={listDetailOwner} className="dm-thread__avatar" />
+                <span>
+                  <strong>{listDetailOwner?.name ?? 'Unknown traveler'}</strong>
+                  <small className="list-collaborators__role list-collaborators__role--owner">Owner</small>
+                </span>
+              </button>
+              {listDetailAcceptedCollaborators.map(({ user }) => (
+                <div key={user.id} className="list-collaborators__person-row">
+                  <button type="button" className="list-collaborators__person" onClick={() => openProfile(user.id)}>
+                    <Avatar user={user} className="dm-thread__avatar" />
+                    <span>
+                      <strong>{user.name}</strong>
+                      <small className="list-collaborators__role">Collaborator</small>
+                    </span>
+                  </button>
+                  {listDetailIsOwner ? (
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => actions.removeListCollaborator(listDetail.id, user.id)}
+                      aria-label={`Remove ${user.name}`}
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+
+            {listDetailIsOwner ? (
+              <>
+                {listDetailPendingCollaborators.length > 0 ? (
+                  <p className="list-collaborators__pending">
+                    Pending: {listDetailPendingCollaborators.map(({ user }) => user.name).join(', ')}
+                  </p>
+                ) : null}
+                <div className="expense-invite-more">
+                  <input
+                    type="text"
+                    className="expense-invite-search"
+                    value={listInviteSearchQuery}
+                    onChange={(event) => setListInviteSearchQuery(event.target.value)}
+                    placeholder="Search people to invite…"
+                  />
+                  {normalizedListInviteSearch ? (
+                    <div className="expense-invite-results">
+                      {listInviteSearchResults.length === 0 ? (
+                        <p className="sidebar__empty">No matching travelers.</p>
+                      ) : (
+                        listInviteSearchResults.map((user) => (
+                          <button
+                            key={user.id}
+                            type="button"
+                            className="expense-invite-results__item"
+                            onClick={() => submitListInvite(user.id)}
+                          >
+                            <Avatar user={user} className="dm-thread__avatar" />
+                            <span>
+                              <strong>{user.name}</strong>
+                              <small>{user.handle}</small>
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
           </div>
         </div>
       ) : null}

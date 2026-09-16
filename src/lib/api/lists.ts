@@ -2,6 +2,7 @@ import { supabase } from '../supabaseClient';
 import {
   composeTripList,
   type AttachmentFileRow,
+  type ListCollaboratorRow,
   type ListRow,
   type PlaceAttachmentRow,
   type PlaceRow,
@@ -36,16 +37,17 @@ async function withSignedAttachmentUrls(files: AttachmentFileRow[]): Promise<Att
 }
 
 export async function fetchAllLists(): Promise<TripList[]> {
-  const [listsRes, placesRes, daysRes, dayPlacesRes, attachmentsRes, filesRes] = await Promise.all([
+  const [listsRes, placesRes, daysRes, dayPlacesRes, attachmentsRes, filesRes, collaboratorsRes] = await Promise.all([
     supabase.from('lists').select('*').order('created_at', { ascending: false }),
     supabase.from('places').select('*'),
     supabase.from('trip_days').select('*'),
     supabase.from('trip_day_places').select('*'),
     supabase.from('place_attachments').select('*'),
     supabase.from('attachment_files').select('*'),
+    supabase.from('list_collaborators').select('*'),
   ]);
 
-  for (const res of [listsRes, placesRes, daysRes, dayPlacesRes, attachmentsRes, filesRes]) {
+  for (const res of [listsRes, placesRes, daysRes, dayPlacesRes, attachmentsRes, filesRes, collaboratorsRes]) {
     if (res.error) throw res.error;
   }
 
@@ -56,6 +58,7 @@ export async function fetchAllLists(): Promise<TripList[]> {
   const attachments = (attachmentsRes.data ?? []) as PlaceAttachmentRow[];
   const rawFiles = (filesRes.data ?? []) as AttachmentFileRow[];
   const files = await withSignedAttachmentUrls(rawFiles);
+  const collaborators = (collaboratorsRes.data ?? []) as ListCollaboratorRow[];
 
   return lists.map((list) =>
     composeTripList(
@@ -65,6 +68,7 @@ export async function fetchAllLists(): Promise<TripList[]> {
       dayPlaces,
       attachments,
       files,
+      collaborators.filter((collaborator) => collaborator.list_id === list.id),
     ),
   );
 }
@@ -160,6 +164,7 @@ export async function createList(ownerId: string, draft: DraftList): Promise<str
     color: draft.color || null,
     start_date: draft.startDate || null,
     end_date: draft.endDate || null,
+    is_private: draft.isPrivate ?? false,
   });
   if (error) throw error;
 
@@ -208,9 +213,39 @@ export async function updateList(listId: string, draft: DraftList): Promise<void
       color: draft.color || null,
       start_date: draft.startDate || null,
       end_date: draft.endDate || null,
+      is_private: draft.isPrivate ?? false,
     })
     .eq('id', listId);
   if (error) throw error;
 
   await savePlacesAndDays(listId, draft.places, draft.days);
+}
+
+export async function inviteListCollaborator(listId: string, userId: string, invitedBy: string): Promise<void> {
+  const { error } = await supabase
+    .from('list_collaborators')
+    .insert({ list_id: listId, user_id: userId, status: 'invited', invited_by: invitedBy });
+  if (error) throw error;
+}
+
+export async function respondToListInvite(listId: string, userId: string, status: 'accepted' | 'declined'): Promise<void> {
+  // Mirrors respondToInvite for expense groups: a decline removes the row outright rather than
+  // keeping a 'declined' one around, so it disappears from both sides in one place.
+  if (status === 'declined') {
+    const { error } = await supabase.from('list_collaborators').delete().eq('list_id', listId).eq('user_id', userId);
+    if (error) throw error;
+    return;
+  }
+
+  const { error } = await supabase
+    .from('list_collaborators')
+    .update({ status, responded_at: new Date().toISOString() })
+    .eq('list_id', listId)
+    .eq('user_id', userId);
+  if (error) throw error;
+}
+
+export async function removeListCollaborator(listId: string, userId: string): Promise<void> {
+  const { error } = await supabase.from('list_collaborators').delete().eq('list_id', listId).eq('user_id', userId);
+  if (error) throw error;
 }

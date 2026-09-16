@@ -70,6 +70,7 @@ export const demoLists: TripList[] = [
     season: 'spring',
     budget: 'mid-range',
     createdAt: '2026-06-02T08:00:00.000Z',
+    collaborators: [],
   },
   {
     id: 'list-mexico',
@@ -93,6 +94,7 @@ export const demoLists: TripList[] = [
     placeAttachments: {
       'p-mex-4': { note: 'Museo Jumex tickets booked for 11am, confirmation #JX-88213.', files: [] },
     },
+    collaborators: [],
   },
   {
     id: 'list-patagonia',
@@ -113,6 +115,7 @@ export const demoLists: TripList[] = [
     season: 'summer',
     budget: 'high',
     createdAt: '2026-06-15T08:00:00.000Z',
+    collaborators: [],
   },
   {
     id: 'list-lisbon',
@@ -136,6 +139,7 @@ export const demoLists: TripList[] = [
     season: 'summer',
     budget: 'mid-range',
     createdAt: '2026-06-20T08:00:00.000Z',
+    collaborators: [],
   },
   {
     id: 'list-iceland',
@@ -156,6 +160,7 @@ export const demoLists: TripList[] = [
     season: 'winter',
     budget: 'high',
     createdAt: '2026-06-25T08:00:00.000Z',
+    collaborators: [],
   },
 ];
 
@@ -215,4 +220,5 @@ export const emptyDraft: DraftList = {
   days: [],
   season: 'summer',
   budget: 'mid-range',
+  isPrivate: false,
 };

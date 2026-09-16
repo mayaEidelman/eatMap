@@ -29,6 +29,17 @@ type MapPanelProps = {
 const defaultCenter = { lat: 20, lng: 0 };
 const defaultZoom = 2;
 
+/** Google's world map is exactly `256 * 2^zoom` pixels square at a given zoom level. Zooming out
+ * past the point where that's smaller than the map's own container leaves gray padding around the
+ * edges -- which shows up more the bigger/wider the screen (a 3000px-wide monitor runs out of
+ * world well before a phone does). Picking minZoom off the container's actual size, rather than a
+ * fixed constant, keeps "zoomed all the way out" edge-to-edge on every screen. */
+function computeMinZoom(containerWidth: number, containerHeight: number): number {
+  const longestSide = Math.max(containerWidth, containerHeight, 1);
+  const zoomForFullWorld = Math.log2(longestSide / 256);
+  return Math.max(2, Math.ceil(zoomForFullWorld));
+}
+
 function colorForList(listId: string, lists: TripList[]) {
   const list = lists.find((item) => item.id === listId);
   if (list?.color) {
@@ -194,6 +205,7 @@ export function MapPanel({
 
   useEffect(() => {
     let cancelled = false;
+    let resizeObserver: ResizeObserver | undefined;
 
     loadGoogleMaps()
       .then((googleApi) => {
@@ -201,17 +213,38 @@ export function MapPanel({
           return;
         }
 
+        const { width, height } = mapRef.current.getBoundingClientRect();
+
         mapInstance.current = new googleApi.maps.Map(mapRef.current, {
           center: defaultCenter,
           zoom: defaultZoom,
-          // Below ~zoom 2, Google tiles the whole world side-by-side repeatedly, which reads as
-          // a rendering glitch rather than "zoomed out" -- floor it just above that point.
-          minZoom: 2,
+          minZoom: computeMinZoom(width, height),
+          // minZoom alone only stops the world from rendering *smaller* than the container --
+          // it doesn't stop the user from dragging the viewport's center up past the map's real
+          // north/south edge (Mercator projection has no data past ~85 degrees). `restriction`
+          // clamps panning itself so the visible area can never show past the world's actual
+          // bounds, which is what was still leaking gray on drag.
+          restriction: {
+            latLngBounds: { north: 85, south: -85, west: -180, east: 180 },
+            strictBounds: true,
+          },
           disableDefaultUI: true,
           zoomControl: true,
           clickableIcons: true,
           styles: MAP_STYLE,
         });
+
+        // Recompute on every resize (window resize, sidebar toggle, orientation change) rather
+        // than once at load -- a map that started small (e.g. sidebar open) and then grows must
+        // tighten minZoom too, or the world can end up smaller than the now-bigger container.
+        resizeObserver = new ResizeObserver((entries) => {
+          const entry = entries[0];
+          if (!entry || !mapInstance.current) return;
+          const { width: nextWidth, height: nextHeight } = entry.contentRect;
+          mapInstance.current.setOptions({ minZoom: computeMinZoom(nextWidth, nextHeight) });
+        });
+        resizeObserver.observe(mapRef.current);
+
         infoWindow.current = new googleApi.maps.InfoWindow();
         infoWindow.current.addListener('closeclick', () => onDismissPreviewPlaceRef.current?.());
         placesService.current = new googleApi.maps.places.PlacesService(mapInstance.current);
@@ -271,6 +304,7 @@ export function MapPanel({
 
     return () => {
       cancelled = true;
+      resizeObserver?.disconnect();
     };
   }, []);
 

@@ -1,6 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { saveAttachment as saveAttachmentApi } from '../lib/api/attachments';
-import { addPlaceToList, createList, removePlaceFromList, updateList } from '../lib/api/lists';
+import {
+  addPlaceToList,
+  createList,
+  inviteListCollaborator as inviteListCollaboratorApi,
+  removeListCollaborator as removeListCollaboratorApi,
+  removePlaceFromList,
+  respondToListInvite as respondToListInviteApi,
+  updateList,
+} from '../lib/api/lists';
 import { rateList as rateListApi } from '../lib/api/ratings';
 import { followUser, likeList, saveList as saveListApi, unfollowUser, unlikeList, unsaveList } from '../lib/api/social';
 import { updateProfile, type ProfileUpdate } from '../lib/api/users';
@@ -84,5 +92,34 @@ export function useAppActions(currentUserId: string | null) {
     await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.lists });
   }
 
-  return { toggleFollow, toggleSaveList, toggleLike, rateList, saveList, saveProfile, saveAttachment, togglePlaceInList };
+  async function inviteListCollaborator(listId: string, userId: string) {
+    if (!currentUserId) return;
+    await inviteListCollaboratorApi(listId, userId, currentUserId);
+    await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.lists });
+  }
+
+  async function respondToListInvite(listId: string, status: 'accepted' | 'declined') {
+    if (!currentUserId) return;
+    await respondToListInviteApi(listId, currentUserId, status);
+    await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.lists });
+  }
+
+  async function removeListCollaborator(listId: string, userId: string) {
+    await removeListCollaboratorApi(listId, userId);
+    await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.lists });
+  }
+
+  return {
+    toggleFollow,
+    toggleSaveList,
+    toggleLike,
+    rateList,
+    saveList,
+    saveProfile,
+    saveAttachment,
+    togglePlaceInList,
+    inviteListCollaborator,
+    respondToListInvite,
+    removeListCollaborator,
+  };
 }
