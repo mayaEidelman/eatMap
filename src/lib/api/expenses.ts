@@ -87,6 +87,31 @@ export async function renameExpenseGroup(groupId: string, name: string): Promise
   if (error) throw error;
 }
 
+/** Changing the base currency isn't just relabeling -- every existing expense's `exchange_rate`
+ * and `converted_amount` was snapshotted against the *old* base currency, and balances/charts sum
+ * `converted_amount` directly assuming it's already in the group's current base currency. Re-quote
+ * each expense against the new base currency first, so nothing silently goes stale. */
+export async function updateExpenseGroupBaseCurrency(groupId: string, baseCurrency: string): Promise<void> {
+  const { data: expenseRows, error: fetchError } = await supabase
+    .from('expenses')
+    .select('id, currency, amount')
+    .eq('group_id', groupId);
+  if (fetchError) throw fetchError;
+
+  for (const expense of expenseRows ?? []) {
+    const exchangeRate = await getExchangeRate(expense.currency, baseCurrency);
+    const convertedAmount = Math.round(expense.amount * exchangeRate * 100) / 100;
+    const { error } = await supabase
+      .from('expenses')
+      .update({ exchange_rate: exchangeRate, converted_amount: convertedAmount })
+      .eq('id', expense.id);
+    if (error) throw error;
+  }
+
+  const { error: groupError } = await supabase.from('expense_groups').update({ base_currency: baseCurrency }).eq('id', groupId);
+  if (groupError) throw groupError;
+}
+
 export async function deleteExpenseGroup(groupId: string): Promise<void> {
   const { error } = await supabase.from('expense_groups').delete().eq('id', groupId);
   if (error) throw error;
@@ -213,6 +238,37 @@ export async function addExpense(groupId: string, baseCurrency: string, expense:
   if (sharesError) throw sharesError;
 }
 
+export async function updateExpense(expenseId: string, groupId: string, baseCurrency: string, expense: NewExpense): Promise<void> {
+  const exchangeRate = await getExchangeRate(expense.currency, baseCurrency);
+  const convertedAmount = Math.round(expense.amount * exchangeRate * 100) / 100;
+
+  const { error } = await supabase
+    .from('expenses')
+    .update({
+      paid_by: expense.paidBy,
+      description: expense.description,
+      category: expense.category,
+      amount: expense.amount,
+      currency: expense.currency,
+      exchange_rate: exchangeRate,
+      converted_amount: convertedAmount,
+      spent_at: expense.spentAt,
+    })
+    .eq('id', expenseId)
+    .eq('group_id', groupId);
+  if (error) throw error;
+
+  // Shares are wholesale-replaced rather than diffed -- an edit can add/remove participants or
+  // flip equal/custom, so there's no stable identity to reconcile row-by-row against.
+  const { error: deleteSharesError } = await supabase.from('expense_shares').delete().eq('expense_id', expenseId);
+  if (deleteSharesError) throw deleteSharesError;
+
+  const { error: sharesError } = await supabase
+    .from('expense_shares')
+    .insert(expense.shares.map((share) => ({ expense_id: expenseId, user_id: share.userId, amount: share.amount })));
+  if (sharesError) throw sharesError;
+}
+
 export async function deleteExpense(expenseId: string): Promise<void> {
   const { error } = await supabase.from('expenses').delete().eq('id', expenseId);
   if (error) throw error;
@@ -220,5 +276,10 @@ export async function deleteExpense(expenseId: string): Promise<void> {
 
 export async function addSettlement(groupId: string, fromUser: string, toUser: string, amount: number): Promise<void> {
   const { error } = await supabase.from('expense_settlements').insert({ group_id: groupId, from_user: fromUser, to_user: toUser, amount });
+  if (error) throw error;
+}
+
+export async function deleteSettlement(settlementId: string): Promise<void> {
+  const { error } = await supabase.from('expense_settlements').delete().eq('id', settlementId);
   if (error) throw error;
 }
