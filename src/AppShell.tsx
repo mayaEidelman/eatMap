@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { Compass, DollarSign, Map as MapIcon, MessageCircle, Trash2, User as UserIcon } from 'lucide-react';
+import { Compass, DollarSign, Map as MapIcon, MessageCircle, Plus, Search, Trash2, User as UserIcon } from 'lucide-react';
 import { ImportPlacesModal } from './components/ImportPlacesModal';
 import { MapPanel } from './components/MapPanel';
 import { PlaceAutocomplete, type PlaceSearchResult } from './components/PlaceAutocomplete';
@@ -1432,7 +1432,16 @@ function AppShell() {
                 aria-label="Search places"
                 aria-expanded={mapSearchPopoverOpen}
               >
-                🔍
+                <Search aria-hidden="true" size={19} strokeWidth={1.75} />
+              </button>
+              <button
+                className="map-search-float__button icon-button"
+                type="button"
+                onClick={openCreateList}
+                aria-label="Create a new list"
+                title="Create a new list"
+              >
+                <Plus aria-hidden="true" size={19} strokeWidth={1.75} />
               </button>
 
               {mapSearchPopoverOpen ? (
