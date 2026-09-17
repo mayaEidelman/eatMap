@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { Compass, DollarSign, Map as MapIcon, MessageCircle, Plus, Search, Trash2, User as UserIcon, UserPlus } from 'lucide-react';
+import { Compass, DollarSign, Map as MapIcon, MessageCircle, Plus, Route, Search, Trash2, User as UserIcon, UserPlus } from 'lucide-react';
 import { ImportPlacesModal } from './components/ImportPlacesModal';
 import { MapPanel } from './components/MapPanel';
 import { PlaceAutocomplete, type PlaceSearchResult } from './components/PlaceAutocomplete';
@@ -139,6 +139,22 @@ function formatTimeRange(range: PlaceTimeRange | undefined): string {
   const end = formatClockTime(range.endTime);
   if (start && end) return `${start} – ${end}`;
   return start || end;
+}
+
+/** "Day 2 · Tokyo · 14/03" -- day label plus its destination and date (dd/mm, parsed by hand
+ * rather than through Date so a plain "YYYY-MM-DD" string never risks a local-timezone shift). */
+function formatDayOptionLabel(tripDay: TripDay): string {
+  // Auto-generated days carry a verbose date baked into the label itself ("Day 10 · Mon, Oct 5")
+  // -- keep just the "Day N" part here since the date gets re-added below in compact dd/mm form.
+  // Manually-added labels have no " · " to split on, so this is a no-op for them.
+  const dayNumber = tripDay.label.split(' · ')[0];
+  const parts = [dayNumber];
+  if (tripDay.destination) parts.push(tripDay.destination);
+  if (tripDay.date) {
+    const [, month, day] = tripDay.date.split('-');
+    if (day && month) parts.push(`${day}/${month}`);
+  }
+  return parts.join(' · ');
 }
 
 function getListSummary(listId: string, ratings: Rating[]) {
@@ -1667,6 +1683,18 @@ function AppShell() {
               >
                 <Plus aria-hidden="true" size={19} strokeWidth={1.75} />
               </button>
+              {canGroupSelectedList ? (
+                <button
+                  className="map-search-float__button icon-button"
+                  type="button"
+                  onClick={() => setPlaceSelectMode((mode) => !mode)}
+                  aria-label="Select places to group into a day"
+                  aria-expanded={placeSelectMode}
+                  title="Group places into a day"
+                >
+                  <Route aria-hidden="true" size={19} strokeWidth={1.75} />
+                </button>
+              ) : null}
 
               {mapSearchPopoverOpen ? (
                 <div className="map-search-float__popover panel">
@@ -1690,44 +1718,45 @@ function AppShell() {
                   />
                 </div>
               ) : null}
-            </div>
-          )}
 
-          {canGroupSelectedList ? (
-            <div className="map-group-toolbar panel">
-              {!placeSelectMode ? (
-                <button type="button" className="secondary-button" onClick={() => setPlaceSelectMode(true)}>
-                  Select places to group
-                </button>
-              ) : (
-                <>
-                  <span className="map-group-toolbar__count">
+              {canGroupSelectedList ? (
+                <div className={`map-group-panel panel${placeSelectMode ? ' map-group-panel--open' : ''}`}>
+                  <span className="map-group-panel__count">
                     {selectedPlaceIds.size > 0 ? `${selectedPlaceIds.size} selected` : 'Click places on the map'}
                   </span>
-                  <select value={groupTargetDayId} onChange={(event) => setGroupTargetDayId(event.target.value)}>
-                    <option value="">Add to day…</option>
+                  <select
+                    className="map-group-panel__select"
+                    value={groupTargetDayId}
+                    onChange={(event) => setGroupTargetDayId(event.target.value)}
+                  >
+                    <option value="">Which day?</option>
                     {selectedList?.days.map((tripDay) => (
                       <option key={tripDay.id} value={tripDay.id}>
-                        {tripDay.label}
+                        {formatDayOptionLabel(tripDay)}
                       </option>
                     ))}
                   </select>
                   <button
-                    className="primary-button"
+                    className="primary-button map-group-panel__add"
                     type="button"
                     disabled={!groupTargetDayId || selectedPlaceIds.size === 0}
                     onClick={assignSelectedPlacesToDay}
                   >
-                    Add to day
+                    Add
                   </button>
-                  <button className="icon-button" type="button" onClick={exitPlaceSelectMode} aria-label="Cancel selection">
+                  <button
+                    className="icon-button map-group-panel__close"
+                    type="button"
+                    onClick={exitPlaceSelectMode}
+                    aria-label="Cancel selection"
+                  >
                     ×
                   </button>
-                </>
-              )}
-              {groupError ? <p className="place-autocomplete__error">{groupError}</p> : null}
+                  {groupError ? <p className="place-autocomplete__error">{groupError}</p> : null}
+                </div>
+              ) : null}
             </div>
-          ) : null}
+          )}
         </div>
       ) : null}
 

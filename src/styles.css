@@ -2446,34 +2446,70 @@ button.stat-pill {
   gap: 8px;
 }
 
-.map-group-toolbar {
-  position: absolute;
-  bottom: 28px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
+.map-group-panel {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: 8px;
+  max-width: 0;
+  opacity: 0;
+  padding: 0;
+  overflow: hidden;
   border-radius: 999px;
-  max-width: calc(100vw - 36px);
+  white-space: nowrap;
+  pointer-events: none;
+  transition: max-width 0.32s ease, opacity 0.22s ease, padding 0.32s ease;
 }
 
-.map-group-toolbar__count {
-  font-size: 0.82rem;
+.map-group-panel--open {
+  max-width: 640px;
+  opacity: 1;
+  padding: 0 8px 0 16px;
+  pointer-events: auto;
+}
+
+.map-group-panel__count {
+  font-size: 0.8rem;
   font-weight: 700;
   white-space: nowrap;
   color: var(--muted);
+  flex-shrink: 0;
 }
 
-.map-group-toolbar .place-autocomplete__error {
+.map-group-panel__select {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 220px;
+  padding: 8px 30px 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238c7c7c' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    no-repeat right 12px center;
+  appearance: none;
+  -webkit-appearance: none;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+}
+
+.map-group-panel__add {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  font-size: 0.82rem;
+}
+
+.map-group-panel__close {
+  flex-shrink: 0;
+}
+
+.map-group-panel .place-autocomplete__error {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
   right: 0;
   margin: 0;
   text-align: center;
+  white-space: normal;
 }
 
 .map-search-float__button {
