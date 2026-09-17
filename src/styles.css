@@ -2446,6 +2446,36 @@ button.stat-pill {
   gap: 8px;
 }
 
+.map-group-toolbar {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  max-width: calc(100vw - 36px);
+}
+
+.map-group-toolbar__count {
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.map-group-toolbar .place-autocomplete__error {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+}
+
 .map-search-float__button {
   width: 46px;
   height: 46px;

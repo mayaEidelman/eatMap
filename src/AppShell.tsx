@@ -397,6 +397,10 @@ function AppShell() {
   const [inspectedPlaceId, setInspectedPlaceId] = useState<string | null>(null);
   const [openTimelineListIds, setOpenTimelineListIds] = useState<Set<string>>(new Set());
   const [selectedDayByListId, setSelectedDayByListId] = useState<Record<string, string | null>>({});
+  const [placeSelectMode, setPlaceSelectMode] = useState(false);
+  const [selectedPlaceIds, setSelectedPlaceIds] = useState<Set<string>>(new Set());
+  const [groupTargetDayId, setGroupTargetDayId] = useState('');
+  const [groupError, setGroupError] = useState<string | null>(null);
   const [recentlyWatchedListIds, setRecentlyWatchedListIds] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(RECENTLY_WATCHED_KEY);
@@ -457,6 +461,14 @@ function AppShell() {
       setSelectedListId(data.lists[0].id);
     }
   }, [data, selectedList]);
+
+  // Selection is scoped to whichever list is active on the map -- switching lists mid-selection
+  // (e.g. by clicking a different list's marker) would otherwise leave stale place ids selected
+  // against the wrong list's days.
+  useEffect(() => {
+    setSelectedPlaceIds(new Set());
+    setGroupTargetDayId('');
+  }, [selectedListId]);
 
   useEffect(() => {
     if (currentUser) {
@@ -686,6 +698,18 @@ function AppShell() {
       return { ...list, places: list.places.filter((place) => visiblePlaceIds.has(place.id)) };
     });
   }, [myMapLists, openTimelineListIds, selectedDayByListId]);
+
+  // Grouping only makes sense for a list actually shown on the map, with days to group into, and
+  // that the current user is allowed to edit (owner or accepted collaborator) -- same permission
+  // shape as the "Edit list" button in the list detail modal.
+  const canGroupSelectedList = Boolean(
+    data &&
+      selectedList &&
+      myMapLists.some((list) => list.id === selectedList.id) &&
+      selectedList.days.length > 0 &&
+      (selectedList.ownerId === data.currentUserId ||
+        selectedList.collaborators.some((collaborator) => collaborator.userId === data.currentUserId && collaborator.status === 'accepted')),
+  );
 
   const peopleToFollow = useMemo(() => (data ? data.users.filter((user) => user.id !== data.currentUserId) : []), [data]);
 
@@ -1084,6 +1108,37 @@ function AppShell() {
     setListDetailId(null);
   }
 
+  function togglePlaceSelection(placeId: string) {
+    setSelectedPlaceIds((current) => {
+      const next = new Set(current);
+      if (next.has(placeId)) {
+        next.delete(placeId);
+      } else {
+        next.add(placeId);
+      }
+      return next;
+    });
+  }
+
+  function exitPlaceSelectMode() {
+    setPlaceSelectMode(false);
+    setSelectedPlaceIds(new Set());
+    setGroupTargetDayId('');
+    setGroupError(null);
+  }
+
+  async function assignSelectedPlacesToDay() {
+    if (!groupTargetDayId || selectedPlaceIds.size === 0) return;
+    setGroupError(null);
+    try {
+      await actions.assignPlacesToDay(groupTargetDayId, Array.from(selectedPlaceIds));
+      exitPlaceSelectMode();
+    } catch (error) {
+      console.error('assignPlacesToDay failed:', error);
+      setGroupError(describeQueryError(error));
+    }
+  }
+
   function openProfile(userId: string) {
     if (userId === appData.currentUserId) {
       setListDetailId(null);
@@ -1459,6 +1514,9 @@ function AppShell() {
             onSavePreviewPlace={() => setSaveToListOpen(true)}
             onDismissPreviewPlace={discardMapSearchPlace}
             onDiscoverPlace={handleMapPlaceFound}
+            selectMode={placeSelectMode}
+            selectedPlaceIds={selectedPlaceIds}
+            onTogglePlaceSelect={togglePlaceSelection}
           />
 
           {sidebarOpen ? (
@@ -1634,6 +1692,42 @@ function AppShell() {
               ) : null}
             </div>
           )}
+
+          {canGroupSelectedList ? (
+            <div className="map-group-toolbar panel">
+              {!placeSelectMode ? (
+                <button type="button" className="secondary-button" onClick={() => setPlaceSelectMode(true)}>
+                  Select places to group
+                </button>
+              ) : (
+                <>
+                  <span className="map-group-toolbar__count">
+                    {selectedPlaceIds.size > 0 ? `${selectedPlaceIds.size} selected` : 'Click places on the map'}
+                  </span>
+                  <select value={groupTargetDayId} onChange={(event) => setGroupTargetDayId(event.target.value)}>
+                    <option value="">Add to day…</option>
+                    {selectedList?.days.map((tripDay) => (
+                      <option key={tripDay.id} value={tripDay.id}>
+                        {tripDay.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="primary-button"
+                    type="button"
+                    disabled={!groupTargetDayId || selectedPlaceIds.size === 0}
+                    onClick={assignSelectedPlacesToDay}
+                  >
+                    Add to day
+                  </button>
+                  <button className="icon-button" type="button" onClick={exitPlaceSelectMode} aria-label="Cancel selection">
+                    ×
+                  </button>
+                </>
+              )}
+              {groupError ? <p className="place-autocomplete__error">{groupError}</p> : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
 

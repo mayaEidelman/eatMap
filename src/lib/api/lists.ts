@@ -198,6 +198,31 @@ export async function removePlaceFromList(placeId: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Moves one or more places straight into a day -- used by the map's "select places, then group
+ * into a day" flow, so grouping stops requiring a trip back to the Edit List page. `place_id` is
+ * unique on trip_day_places, so upserting on it both re-homes a place already scheduled elsewhere
+ * and schedules a previously-unscheduled one, in the same call. Only sort_order/day_id are in the
+ * payload, so an existing place's start_time/end_time survive the move untouched. */
+export async function assignPlacesToDay(dayId: string, placeIds: string[]): Promise<void> {
+  if (placeIds.length === 0) return;
+
+  const { data: existing, error: fetchError } = await supabase
+    .from('trip_day_places')
+    .select('sort_order')
+    .eq('day_id', dayId)
+    .order('sort_order', { ascending: false })
+    .limit(1);
+  if (fetchError) throw fetchError;
+
+  const startOrder = (existing?.[0]?.sort_order ?? -1) + 1;
+
+  const { error } = await supabase.from('trip_day_places').upsert(
+    placeIds.map((placeId, index) => ({ day_id: dayId, place_id: placeId, sort_order: startOrder + index })),
+    { onConflict: 'place_id' },
+  );
+  if (error) throw error;
+}
+
 export async function updateList(listId: string, draft: DraftList): Promise<void> {
   const { error } = await supabase
     .from('lists')

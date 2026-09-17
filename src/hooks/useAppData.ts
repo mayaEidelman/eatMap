@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAllLists } from '../lib/api/lists';
 import { fetchAllProfiles } from '../lib/api/users';
@@ -31,17 +32,27 @@ export function useAppData(currentUserId: string | null) {
   const isLoading = enabled && queries.some((query) => query.isPending);
   const error = queries.find((query) => query.error)?.error ?? null;
 
-  const data: AppData | null = currentUserId && !isLoading
-    ? {
-        currentUserId,
-        users: profiles.data ?? [],
-        lists: lists.data ?? [],
-        follows: follows.data ?? [],
-        savedLists: savedLists.data ?? [],
-        likes: likes.data ?? [],
-        ratings: ratings.data ?? [],
-      }
-    : null;
+  // Memoized (keyed on the underlying query data, not recreated as a fresh object every render)
+  // so consumers downstream -- every `useMemo` in AppShell that depends on `data`, e.g. the map's
+  // list of markers -- stay referentially stable across renders that don't actually change any
+  // data. Without this, a render triggered by something wholly unrelated (like toggling a map
+  // marker's selection state) rebuilds `data` from scratch, which cascades into "new" list arrays
+  // reaching MapPanel and made it re-fit/re-center the map on every click.
+  const data: AppData | null = useMemo(
+    () =>
+      currentUserId && !isLoading
+        ? {
+            currentUserId,
+            users: profiles.data ?? [],
+            lists: lists.data ?? [],
+            follows: follows.data ?? [],
+            savedLists: savedLists.data ?? [],
+            likes: likes.data ?? [],
+            ratings: ratings.data ?? [],
+          }
+        : null,
+    [currentUserId, isLoading, profiles.data, lists.data, follows.data, savedLists.data, likes.data, ratings.data],
+  );
 
   return { data, isLoading, error };
 }

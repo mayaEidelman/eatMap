@@ -24,6 +24,12 @@ type MapPanelProps = {
    * hands back the same shape a search result produces, so the caller can treat it identically
    * (e.g. wire it straight to the same handler used for the search box). */
   onDiscoverPlace?: (place: PlaceSearchResult) => void;
+  /** While true, clicking a marker that belongs to the selected list toggles its selection
+   * (for grouping places into a trip day) instead of opening its info window. Markers for other
+   * lists keep their normal click behavior either way. */
+  selectMode?: boolean;
+  selectedPlaceIds?: Set<string>;
+  onTogglePlaceSelect?: (placeId: string) => void;
 };
 
 const defaultCenter = { lat: 20, lng: 0 };
@@ -178,6 +184,9 @@ export function MapPanel({
   onSavePreviewPlace,
   onDismissPreviewPlace,
   onDiscoverPlace,
+  selectMode,
+  selectedPlaceIds,
+  onTogglePlaceSelect,
 }: MapPanelProps) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstance = useRef<google.maps.Map | null>(null);
@@ -317,37 +326,43 @@ export function MapPanel({
     markers.current.forEach((marker) => marker.setMap(null));
     markers.current = [];
 
-    const bounds = new window.google.maps.LatLngBounds();
-    let hasPoints = false;
-
     lists.forEach((list) => {
       const active = list.id === selectedListId;
       const color = colorForList(list.id, lists);
 
       list.places.forEach((placeItem) => {
         const position = { lat: placeItem.lat, lng: placeItem.lng };
+        const isSelectable = Boolean(selectMode) && active;
+        const isSelected = isSelectable && Boolean(selectedPlaceIds?.has(placeItem.id));
         const marker = new window.google.maps.Marker({
           position,
           map,
           title: `${placeItem.name} — ${list.title}`,
           // Bigger than Google's own POI icons and carrying a category emoji + the list's chosen
           // color, so these read as clearly distinct from the native icons now sharing the map.
+          // Selected markers (grouping mode) get a green fill + checkmark instead, so which pins
+          // are already picked is obvious without opening anything.
           icon: {
             path: window.google.maps.SymbolPath.CIRCLE,
-            scale: active ? 15 : 12,
-            fillColor: color,
+            scale: isSelected ? 16 : active ? 15 : 12,
+            fillColor: isSelected ? '#2f8f5b' : color,
             fillOpacity: 1,
             strokeColor: '#ffffff',
-            strokeWeight: 2,
+            strokeWeight: isSelected ? 3 : 2,
           },
           label: {
-            text: CATEGORY_META[placeItem.category].icon,
+            text: isSelected ? '✓' : CATEGORY_META[placeItem.category].icon,
             fontSize: active ? '15px' : '12px',
           },
-          zIndex: active ? 999 : 1,
+          zIndex: isSelected ? 1000 : active ? 999 : 1,
         });
 
         marker.addListener('click', () => {
+          if (isSelectable) {
+            onTogglePlaceSelect?.(placeItem.id);
+            return;
+          }
+
           onSelectList(list.id);
 
           infoWindow.current?.setContent(buildPlaceCardHtml({ name: placeItem.name, address: placeItem.address }));
@@ -373,7 +388,24 @@ export function MapPanel({
         });
 
         markers.current.push(marker);
-        bounds.extend(position);
+      });
+    });
+  }, [lists, selectedListId, onSelectList, ready, selectMode, selectedPlaceIds, onTogglePlaceSelect]);
+
+  // Split out from marker rebuilding above so toggling a place's selection (which also rebuilds
+  // markers, to recolor the clicked pin) never re-fits/re-zooms the viewport -- only an actual
+  // list switch or the underlying place data changing should move the camera.
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!ready || !map || !window.google) {
+      return;
+    }
+
+    const bounds = new window.google.maps.LatLngBounds();
+    let hasPoints = false;
+    lists.forEach((list) => {
+      list.places.forEach((placeItem) => {
+        bounds.extend({ lat: placeItem.lat, lng: placeItem.lng });
         hasPoints = true;
       });
     });
@@ -392,7 +424,7 @@ export function MapPanel({
       map.setCenter(defaultCenter);
       map.setZoom(defaultZoom);
     }
-  }, [lists, selectedListId, onSelectList, ready]);
+  }, [lists, selectedListId, ready]);
 
   useEffect(() => {
     const map = mapInstance.current;
