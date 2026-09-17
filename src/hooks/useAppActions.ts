@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { saveAttachment as saveAttachmentApi } from '../lib/api/attachments';
 import {
   addPlaceToList,
+  assignPlacesToDay as assignPlacesToDayApi,
   createList,
   inviteListCollaborator as inviteListCollaboratorApi,
   removeListCollaborator as removeListCollaboratorApi,
@@ -109,6 +110,11 @@ export function useAppActions(currentUserId: string | null) {
     await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.lists });
   }
 
+  async function assignPlacesToDay(dayId: string, placeIds: string[]) {
+    await assignPlacesToDayApi(dayId, placeIds);
+    await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.lists });
+  }
+
   return {
     toggleFollow,
     toggleSaveList,
@@ -121,5 +127,6 @@ export function useAppActions(currentUserId: string | null) {
     inviteListCollaborator,
     respondToListInvite,
     removeListCollaborator,
+    assignPlacesToDay,
   };
 }

@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { Compass, DollarSign, Map as MapIcon, MessageCircle, Plus, Search, Trash2, User as UserIcon, UserPlus } from 'lucide-react';
+import { Compass, DollarSign, Map as MapIcon, MessageCircle, Plus, Route, Search, Trash2, User as UserIcon, UserPlus } from 'lucide-react';
 import { ImportPlacesModal } from './components/ImportPlacesModal';
 import { MapPanel } from './components/MapPanel';
 import { PlaceAutocomplete, type PlaceSearchResult } from './components/PlaceAutocomplete';
@@ -139,6 +139,22 @@ function formatTimeRange(range: PlaceTimeRange | undefined): string {
   const end = formatClockTime(range.endTime);
   if (start && end) return `${start} – ${end}`;
   return start || end;
+}
+
+/** "Day 2 · Tokyo · 14/03" -- day label plus its destination and date (dd/mm, parsed by hand
+ * rather than through Date so a plain "YYYY-MM-DD" string never risks a local-timezone shift). */
+function formatDayOptionLabel(tripDay: TripDay): string {
+  // Auto-generated days carry a verbose date baked into the label itself ("Day 10 · Mon, Oct 5")
+  // -- keep just the "Day N" part here since the date gets re-added below in compact dd/mm form.
+  // Manually-added labels have no " · " to split on, so this is a no-op for them.
+  const dayNumber = tripDay.label.split(' · ')[0];
+  const parts = [dayNumber];
+  if (tripDay.destination) parts.push(tripDay.destination);
+  if (tripDay.date) {
+    const [, month, day] = tripDay.date.split('-');
+    if (day && month) parts.push(`${day}/${month}`);
+  }
+  return parts.join(' · ');
 }
 
 function getListSummary(listId: string, ratings: Rating[]) {
@@ -397,6 +413,10 @@ function AppShell() {
   const [inspectedPlaceId, setInspectedPlaceId] = useState<string | null>(null);
   const [openTimelineListIds, setOpenTimelineListIds] = useState<Set<string>>(new Set());
   const [selectedDayByListId, setSelectedDayByListId] = useState<Record<string, string | null>>({});
+  const [placeSelectMode, setPlaceSelectMode] = useState(false);
+  const [selectedPlaceIds, setSelectedPlaceIds] = useState<Set<string>>(new Set());
+  const [groupTargetDayId, setGroupTargetDayId] = useState('');
+  const [groupError, setGroupError] = useState<string | null>(null);
   const [recentlyWatchedListIds, setRecentlyWatchedListIds] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(RECENTLY_WATCHED_KEY);
@@ -457,6 +477,14 @@ function AppShell() {
       setSelectedListId(data.lists[0].id);
     }
   }, [data, selectedList]);
+
+  // Selection is scoped to whichever list is active on the map -- switching lists mid-selection
+  // (e.g. by clicking a different list's marker) would otherwise leave stale place ids selected
+  // against the wrong list's days.
+  useEffect(() => {
+    setSelectedPlaceIds(new Set());
+    setGroupTargetDayId('');
+  }, [selectedListId]);
 
   useEffect(() => {
     if (currentUser) {
@@ -686,6 +714,18 @@ function AppShell() {
       return { ...list, places: list.places.filter((place) => visiblePlaceIds.has(place.id)) };
     });
   }, [myMapLists, openTimelineListIds, selectedDayByListId]);
+
+  // Grouping only makes sense for a list actually shown on the map, with days to group into, and
+  // that the current user is allowed to edit (owner or accepted collaborator) -- same permission
+  // shape as the "Edit list" button in the list detail modal.
+  const canGroupSelectedList = Boolean(
+    data &&
+      selectedList &&
+      myMapLists.some((list) => list.id === selectedList.id) &&
+      selectedList.days.length > 0 &&
+      (selectedList.ownerId === data.currentUserId ||
+        selectedList.collaborators.some((collaborator) => collaborator.userId === data.currentUserId && collaborator.status === 'accepted')),
+  );
 
   const peopleToFollow = useMemo(() => (data ? data.users.filter((user) => user.id !== data.currentUserId) : []), [data]);
 
@@ -1084,6 +1124,37 @@ function AppShell() {
     setListDetailId(null);
   }
 
+  function togglePlaceSelection(placeId: string) {
+    setSelectedPlaceIds((current) => {
+      const next = new Set(current);
+      if (next.has(placeId)) {
+        next.delete(placeId);
+      } else {
+        next.add(placeId);
+      }
+      return next;
+    });
+  }
+
+  function exitPlaceSelectMode() {
+    setPlaceSelectMode(false);
+    setSelectedPlaceIds(new Set());
+    setGroupTargetDayId('');
+    setGroupError(null);
+  }
+
+  async function assignSelectedPlacesToDay() {
+    if (!groupTargetDayId || selectedPlaceIds.size === 0) return;
+    setGroupError(null);
+    try {
+      await actions.assignPlacesToDay(groupTargetDayId, Array.from(selectedPlaceIds));
+      exitPlaceSelectMode();
+    } catch (error) {
+      console.error('assignPlacesToDay failed:', error);
+      setGroupError(describeQueryError(error));
+    }
+  }
+
   function openProfile(userId: string) {
     if (userId === appData.currentUserId) {
       setListDetailId(null);
@@ -1459,6 +1530,9 @@ function AppShell() {
             onSavePreviewPlace={() => setSaveToListOpen(true)}
             onDismissPreviewPlace={discardMapSearchPlace}
             onDiscoverPlace={handleMapPlaceFound}
+            selectMode={placeSelectMode}
+            selectedPlaceIds={selectedPlaceIds}
+            onTogglePlaceSelect={togglePlaceSelection}
           />
 
           {sidebarOpen ? (
@@ -1609,6 +1683,18 @@ function AppShell() {
               >
                 <Plus aria-hidden="true" size={19} strokeWidth={1.75} />
               </button>
+              {canGroupSelectedList ? (
+                <button
+                  className="map-search-float__button icon-button"
+                  type="button"
+                  onClick={() => setPlaceSelectMode((mode) => !mode)}
+                  aria-label="Select places to group into a day"
+                  aria-expanded={placeSelectMode}
+                  title="Group places into a day"
+                >
+                  <Route aria-hidden="true" size={19} strokeWidth={1.75} />
+                </button>
+              ) : null}
 
               {mapSearchPopoverOpen ? (
                 <div className="map-search-float__popover panel">
@@ -1630,6 +1716,43 @@ function AppShell() {
                       setMapSearchPopoverOpen(false);
                     }}
                   />
+                </div>
+              ) : null}
+
+              {canGroupSelectedList ? (
+                <div className={`map-group-panel panel${placeSelectMode ? ' map-group-panel--open' : ''}`}>
+                  <span className="map-group-panel__count">
+                    {selectedPlaceIds.size > 0 ? `${selectedPlaceIds.size} selected` : 'Click places on the map'}
+                  </span>
+                  <select
+                    className="map-group-panel__select"
+                    value={groupTargetDayId}
+                    onChange={(event) => setGroupTargetDayId(event.target.value)}
+                  >
+                    <option value="">Which day?</option>
+                    {selectedList?.days.map((tripDay) => (
+                      <option key={tripDay.id} value={tripDay.id}>
+                        {formatDayOptionLabel(tripDay)}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="primary-button map-group-panel__add"
+                    type="button"
+                    disabled={!groupTargetDayId || selectedPlaceIds.size === 0}
+                    onClick={assignSelectedPlacesToDay}
+                  >
+                    Add
+                  </button>
+                  <button
+                    className="icon-button map-group-panel__close"
+                    type="button"
+                    onClick={exitPlaceSelectMode}
+                    aria-label="Cancel selection"
+                  >
+                    ×
+                  </button>
+                  {groupError ? <p className="place-autocomplete__error">{groupError}</p> : null}
                 </div>
               ) : null}
             </div>
