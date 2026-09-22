@@ -10,6 +10,16 @@ export type PlaceDetails = {
   mapsUrl?: string;
   website?: string;
   phone?: string;
+  /** Only meaningful to a caller that doesn't already know this place's identity -- e.g. a native
+   * Google POI clicked straight off the map, as opposed to one of our own saved markers (whose
+   * caller already has its own name/address/coords and can ignore these). Named distinctly from
+   * "name"/"address" so spreading a `PlaceDetails` into an object that already sets those directly
+   * can never silently clobber them. */
+  placeName?: string;
+  formattedAddress?: string;
+  lat?: number;
+  lng?: number;
+  types?: string[];
 };
 
 const DETAILS_FIELDS = [
@@ -21,6 +31,10 @@ const DETAILS_FIELDS = [
   'url',
   'website',
   'formatted_phone_number',
+  'name',
+  'formatted_address',
+  'geometry',
+  'types',
 ];
 
 let servicePromise: Promise<google.maps.places.PlacesService> | null = null;
@@ -73,6 +87,11 @@ export async function fetchPlaceDetails(placeId: string | undefined): Promise<Pl
         mapsUrl: result.url,
         website: result.website,
         phone: result.formatted_phone_number,
+        placeName: result.name,
+        formattedAddress: result.formatted_address,
+        lat: result.geometry?.location?.lat(),
+        lng: result.geometry?.location?.lng(),
+        types: result.types,
       };
       detailsCache.set(placeId, details);
       resolve(details);

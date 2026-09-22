@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { CATEGORY_META, guessCategoryFromTypes } from '../lib/categories';
-import { MAX_PLACE_PHOTOS } from '../lib/config';
 import { loadGoogleMaps } from '../lib/googleMaps';
 import { defaultColorForIndex } from '../lib/mapColors';
 import { fetchPlaceDetails } from '../lib/placeDetails';
@@ -165,17 +164,6 @@ function buildPlaceCardHtml(details: PlaceCardDetails, saveButtonId?: string, sa
   `;
 }
 
-const PLACE_DETAILS_FIELDS = [
-  'photos',
-  'rating',
-  'user_ratings_total',
-  'price_level',
-  'opening_hours',
-  'url',
-  'website',
-  'formatted_phone_number',
-];
-
 export function MapPanel({
   lists,
   selectedListId,
@@ -194,7 +182,6 @@ export function MapPanel({
   const markers = useRef<google.maps.Marker[]>([]);
   const previewMarker = useRef<google.maps.Marker | null>(null);
   const infoWindow = useRef<google.maps.InfoWindow | null>(null);
-  const placesService = useRef<google.maps.places.PlacesService | null>(null);
   /** Bumped every time a popup opens; an in-flight `getDetails` call only applies its result if
    * this hasn't moved on to a different popup by the time it resolves. */
   const openRequestId = useRef(0);
@@ -257,15 +244,16 @@ export function MapPanel({
 
         infoWindow.current = new googleApi.maps.InfoWindow();
         infoWindow.current.addListener('closeclick', () => onDismissPreviewPlaceRef.current?.());
-        placesService.current = new googleApi.maps.places.PlacesService(mapInstance.current);
 
         // Google's own POI icons (restaurants, shops, attractions) are now visible on the base
         // map. Clicking one normally opens Google's own unstylable mini-card -- intercept it via
         // `event.placeId` instead, fetch the same rich details as a search result, and hand it to
         // `onDiscoverPlace` so the caller can treat "found by clicking a POI" identically to
-        // "found by searching."
+        // "found by searching." Routed through the shared `fetchPlaceDetails` (rather than a
+        // one-off `PlacesService.getDetails` call here) so clicking the same POI twice is served
+        // from its cache instead of re-billing Details + Photo every time.
         mapInstance.current.addListener('click', (event: google.maps.MapMouseEvent | google.maps.IconMouseEvent) => {
-          if (!('placeId' in event) || !event.placeId || !placesService.current) {
+          if (!('placeId' in event) || !event.placeId) {
             return;
           }
 
@@ -273,35 +261,30 @@ export function MapPanel({
           const placeId = event.placeId;
           const requestId = ++openRequestId.current;
 
-          placesService.current.getDetails(
-            { placeId, fields: [...PLACE_DETAILS_FIELDS, 'name', 'formatted_address', 'geometry', 'types'] },
-            (result, status) => {
-              const isCurrent = requestId === openRequestId.current;
-              const ok = status === window.google.maps.places.PlacesServiceStatus.OK;
-              const location = result?.geometry?.location;
-              if (!isCurrent || !ok || !result || !location) {
-                return;
-              }
+          fetchPlaceDetails(placeId).then((details) => {
+            const isCurrent = requestId === openRequestId.current;
+            if (!isCurrent || !details || details.lat === undefined || details.lng === undefined) {
+              return;
+            }
 
-              onDiscoverPlaceRef.current?.({
-                id: crypto.randomUUID(),
-                name: result.name ?? 'Selected place',
-                address: result.formatted_address ?? '',
-                lat: location.lat(),
-                lng: location.lng(),
-                category: guessCategoryFromTypes(result.types),
-                rating: result.rating,
-                userRatingsTotal: result.user_ratings_total,
-                priceLevel: result.price_level,
-                openNow: result.opening_hours?.open_now,
-                photoUrls: result.photos?.slice(0, MAX_PLACE_PHOTOS).map((photo) => photo.getUrl({ maxWidth: 400, maxHeight: 300 })),
-                mapsUrl: result.url,
-                website: result.website,
-                phone: result.formatted_phone_number,
-                googlePlaceId: placeId,
-              });
-            },
-          );
+            onDiscoverPlaceRef.current?.({
+              id: crypto.randomUUID(),
+              name: details.placeName ?? 'Selected place',
+              address: details.formattedAddress ?? '',
+              lat: details.lat,
+              lng: details.lng,
+              category: guessCategoryFromTypes(details.types),
+              rating: details.rating,
+              userRatingsTotal: details.userRatingsTotal,
+              priceLevel: details.priceLevel,
+              openNow: details.openNow,
+              photoUrls: details.photoUrls,
+              mapsUrl: details.mapsUrl,
+              website: details.website,
+              phone: details.phone,
+              googlePlaceId: placeId,
+            });
+          });
         });
 
         setReady(true);
