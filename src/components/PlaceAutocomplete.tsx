@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { guessCategoryFromTypes } from '../lib/categories';
+import { MAX_PLACE_PHOTOS } from '../lib/config';
 import { loadGoogleMaps } from '../lib/googleMaps';
 import type { DraftPlace } from '../types';
 
@@ -73,7 +74,7 @@ export function PlaceAutocomplete({ onAdd }: PlaceAutocompleteProps) {
             userRatingsTotal: place.user_ratings_total,
             priceLevel: place.price_level,
             openNow: place.opening_hours?.open_now,
-            photoUrls: place.photos?.slice(0, 4).map((photo) => photo.getUrl({ maxWidth: 400, maxHeight: 300 })),
+            photoUrls: place.photos?.slice(0, MAX_PLACE_PHOTOS).map((photo) => photo.getUrl({ maxWidth: 400, maxHeight: 300 })),
             mapsUrl: place.url,
             website: place.website,
             phone: place.formatted_phone_number,

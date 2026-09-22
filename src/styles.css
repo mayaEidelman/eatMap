@@ -2435,6 +2435,51 @@ button.stat-pill {
   margin: 0;
 }
 
+.map-sidebar__drag-handle {
+  /* Only meaningful once the mobile media query below turns the sidebar into a bottom sheet --
+     hidden here so it never appears (or intercepts pointer events) on desktop, even though its
+     handlers are always attached. */
+  display: none;
+  justify-content: center;
+  padding: 4px 0 10px;
+  margin: -6px -8px 0;
+  cursor: grab;
+  touch-action: none;
+}
+
+.map-sidebar__drag-handle:active {
+  cursor: grabbing;
+}
+
+.map-sidebar__drag-handle-bar {
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+/* Phone-width screens: the sidebar becomes a draggable bottom sheet instead of a floating side
+   panel, so it never blocks most of the map the way widening it full-screen (the >1240px behavior
+   above) did. Height is driven by --map-sheet-height, set live by the drag handle's pointer
+   handlers in AppShell.tsx; the var's fallback here is only what a fresh (undragged) open uses. */
+@media (max-width: 640px) {
+  .map-sidebar {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: var(--map-sheet-height, 45vh);
+    max-height: 85vh;
+    border-radius: 24px 24px 0 0;
+  }
+
+  .map-sidebar__drag-handle {
+    display: flex;
+  }
+}
+
 .map-search-float {
   /* Absolutely positioned elements sit relative to the ancestor's border box, not its padding box
      -- .map-page's own padding (for topbar clearance) doesn't apply here, so it's repeated. */

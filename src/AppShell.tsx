@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Compass, DollarSign, Map as MapIcon, MessageCircle, Plus, Route, Search, Trash2, User as UserIcon, UserPlus } from 'lucide-react';
 import { ImportPlacesModal } from './components/ImportPlacesModal';
 import { MapPanel } from './components/MapPanel';
@@ -417,6 +417,8 @@ function AppShell() {
   const [selectedPlaceIds, setSelectedPlaceIds] = useState<Set<string>>(new Set());
   const [groupTargetDayId, setGroupTargetDayId] = useState('');
   const [groupError, setGroupError] = useState<string | null>(null);
+  const mapSidebarRef = useRef<HTMLElement | null>(null);
+  const sheetDrag = useRef<{ startY: number; startHeight: number } | null>(null);
   const [recentlyWatchedListIds, setRecentlyWatchedListIds] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(RECENTLY_WATCHED_KEY);
@@ -1124,6 +1126,33 @@ function AppShell() {
     setListDetailId(null);
   }
 
+  // Mobile-only bottom-sheet drag-to-resize for the map sidebar (see .map-sidebar's mobile media
+  // query in styles.css). Written straight against the DOM via a ref/CSS custom property rather
+  // than React state, since pointermove can fire far faster than a state-driven re-render should --
+  // the handle is `display: none` above the mobile breakpoint, so none of this ever fires on
+  // desktop even though the listeners are always attached.
+  function handleSheetDragStart(event: ReactPointerEvent<HTMLDivElement>) {
+    const sidebar = mapSidebarRef.current;
+    if (!sidebar) return;
+    sheetDrag.current = { startY: event.clientY, startHeight: sidebar.getBoundingClientRect().height };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleSheetDragMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = sheetDrag.current;
+    const sidebar = mapSidebarRef.current;
+    if (!drag || !sidebar) return;
+
+    // Dragging up (finger/cursor moves toward smaller clientY) should open the sheet further.
+    const nextHeight = drag.startHeight + (drag.startY - event.clientY);
+    const clamped = Math.min(window.innerHeight * 0.85, Math.max(120, nextHeight));
+    sidebar.style.setProperty('--map-sheet-height', `${clamped}px`);
+  }
+
+  function handleSheetDragEnd() {
+    sheetDrag.current = null;
+  }
+
   function togglePlaceSelection(placeId: string) {
     setSelectedPlaceIds((current) => {
       const next = new Set(current);
@@ -1536,7 +1565,17 @@ function AppShell() {
           />
 
           {sidebarOpen ? (
-            <aside className="map-sidebar panel">
+            <aside className="map-sidebar panel" ref={mapSidebarRef}>
+              <div
+                className="map-sidebar__drag-handle"
+                onPointerDown={handleSheetDragStart}
+                onPointerMove={handleSheetDragMove}
+                onPointerUp={handleSheetDragEnd}
+                onPointerCancel={handleSheetDragEnd}
+              >
+                <span className="map-sidebar__drag-handle-bar" aria-hidden="true" />
+              </div>
+
               <div className="map-sidebar__header">
                 <h3>Lists</h3>
                 <button className="icon-button" type="button" onClick={() => setSidebarOpen(false)} aria-label="Hide sidebar">
