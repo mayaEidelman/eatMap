@@ -36,6 +36,11 @@ export async function fetchTravelTime(
         origins: [origin],
         destinations: [destination],
         travelMode: googleApi.maps.TravelMode[mode],
+        // Transit routing is schedule-based (which bus/train is actually running), so it needs a
+        // time to route against. Leaving this unset falls back to an implicit "now" that's more
+        // failure-prone than passing one explicitly -- Google's own docs recommend always setting
+        // it for TRANSIT requests. Irrelevant (and omitted) for DRIVING/WALKING.
+        ...(mode === 'TRANSIT' ? { transitOptions: { departureTime: new Date() } } : {}),
       },
       (response, status) => {
         if (status !== 'OK') {

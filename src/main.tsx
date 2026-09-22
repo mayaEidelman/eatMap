@@ -27,13 +27,20 @@ const localStoragePersister = createSyncStoragePersister({ storage: window.local
 // worth the persistence here specifically. Failed lookups (e.g. a misconfigured API key) are
 // deliberately excluded so fixing the key and reloading retries immediately instead of replaying
 // the cached failure.
+//
+// `maxAge` bounds how old the *persisted snapshot as a whole* can be before it's discarded wholesale
+// on load -- kept equal to each travel-time query's own `gcTime` (see useTravelTime.ts) so a value
+// surviving in the in-memory cache also survives on disk, instead of the disk copy expiring first
+// and forcing a re-fetch anyway.
+const TRAVEL_TIME_PERSIST_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <PersistQueryClientProvider
       client={queryClient}
       persistOptions={{
         persister: localStoragePersister,
-        maxAge: 24 * 60 * 60 * 1000,
+        maxAge: TRAVEL_TIME_PERSIST_MAX_AGE,
         dehydrateOptions: {
           shouldDehydrateQuery: (query) => query.queryKey[0] === 'travelTime' && query.state.status === 'success',
         },
