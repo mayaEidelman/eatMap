@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { CATEGORY_META, guessCategoryFromTypes } from '../lib/categories';
+import { MAX_PLACE_PHOTOS } from '../lib/config';
 import { loadGoogleMaps } from '../lib/googleMaps';
 import { defaultColorForIndex } from '../lib/mapColors';
 import { fetchPlaceDetails } from '../lib/placeDetails';
@@ -293,7 +294,7 @@ export function MapPanel({
                 userRatingsTotal: result.user_ratings_total,
                 priceLevel: result.price_level,
                 openNow: result.opening_hours?.open_now,
-                photoUrls: result.photos?.slice(0, 4).map((photo) => photo.getUrl({ maxWidth: 400, maxHeight: 300 })),
+                photoUrls: result.photos?.slice(0, MAX_PLACE_PHOTOS).map((photo) => photo.getUrl({ maxWidth: 400, maxHeight: 300 })),
                 mapsUrl: result.url,
                 website: result.website,
                 phone: result.formatted_phone_number,
