@@ -1781,7 +1781,7 @@ function AppShell() {
                 <button
                   className="map-search-float__button icon-button"
                   type="button"
-                  onClick={() => setPlaceSelectMode((mode) => !mode)}
+                  onClick={() => (placeSelectMode ? exitPlaceSelectMode() : setPlaceSelectMode(true))}
                   aria-label="Select places to group into a day"
                   aria-expanded={placeSelectMode}
                   title="Group places into a day"
@@ -1837,14 +1837,6 @@ function AppShell() {
                     onClick={assignSelectedPlacesToDay}
                   >
                     Add
-                  </button>
-                  <button
-                    className="icon-button map-group-panel__close"
-                    type="button"
-                    onClick={exitPlaceSelectMode}
-                    aria-label="Cancel selection"
-                  >
-                    ×
                   </button>
                   {groupError ? <p className="place-autocomplete__error">{groupError}</p> : null}
                 </div>

@@ -2579,6 +2579,13 @@ button.stat-pill {
   top: 96px;
   left: 18px;
   z-index: 10;
+  /* Vertical on every screen size, not just narrow ones -- a horizontal row was wide enough on its
+     own, before any panel even opened, to eat most of a phone's width, leaving the group panel
+     (which expands to the *right* of the last button) almost no room before hitting the screen
+     edge. A column keeps the row itself to one button's width everywhere, so the group panel and
+     the search popover (which open to the side of the column, see below) always have the rest of
+     the screen to expand into regardless of viewport size. */
+  flex-direction: column;
   display: flex;
   gap: 8px;
 }
@@ -2645,13 +2652,13 @@ button.stat-pill {
 }
 
 .map-group-panel__add {
+  /* .primary-button's shared base rule sets a 46px min-height (sized for standalone buttons
+     elsewhere), which made this taller than .map-group-panel__select sitting right next to it --
+     dropping it back to content-driven height lines the two up. */
+  min-height: 0;
   flex-shrink: 0;
   padding: 8px 16px;
   font-size: 0.82rem;
-}
-
-.map-group-panel__close {
-  flex-shrink: 0;
 }
 
 .map-group-panel .place-autocomplete__error {
@@ -2675,11 +2682,11 @@ button.stat-pill {
 
 .map-search-float__popover {
   position: absolute;
-  top: 54px;
-  left: 0;
+  top: 0;
+  left: calc(100% + 8px);
   display: grid;
   gap: 12px;
-  width: min(340px, calc(100vw - 48px));
+  width: min(340px, calc(100vw - 90px));
   padding: 16px;
   border-radius: 20px;
   box-shadow: 0 20px 40px rgba(74, 74, 74, 0.18);
