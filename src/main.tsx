@@ -18,7 +18,7 @@ const queryClient = new QueryClient({
   }),
 });
 
-const localStoragePersister = createSyncStoragePersister({ storage: window.localStorage, key: 'eatmap-query-cache' });
+const localStoragePersister = createSyncStoragePersister({ storage: window.localStorage, key: 'planeat-query-cache' });
 
 // Only travel-time results get written to localStorage -- not lists/profiles/expenses/etc, which
 // should always come fresh from Supabase rather than risk showing stale data after a reload.

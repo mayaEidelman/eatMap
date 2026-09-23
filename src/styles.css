@@ -245,6 +245,28 @@ button {
   text-shadow: 0 2px 10px rgba(74, 74, 74, 0.25);
 }
 
+.topbar__brand-falling-a {
+  display: inline-block;
+  /* Overshoot easing (dips past its landing spot before settling back) reads as a little bounce
+     on arrival, rather than just sliding straight down -- matches "falling into place" better
+     than a plain ease-out would. */
+  animation: brand-a-fall 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes brand-a-fall {
+  0% {
+    transform: translateY(-28px);
+    opacity: 0;
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 .topbar__nav {
   display: inline-flex;
   gap: 8px;
@@ -295,6 +317,10 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .topbar__brand-falling-a {
+    animation: none;
+  }
+
   .page-transition {
     animation: none;
   }

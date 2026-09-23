@@ -57,7 +57,7 @@ import type {
 
 const DEFAULT_COVER = 'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?q=80&w=1200&auto=format&fit=crop';
 
-const RECENTLY_WATCHED_KEY = 'eatmap:recently-watched-lists';
+const RECENTLY_WATCHED_KEY = 'planeat:recently-watched-lists';
 const RECENTLY_WATCHED_LIMIT = 3;
 
 /** Places actually assigned to some day -- excludes places saved to the list but never dragged
@@ -925,7 +925,7 @@ function AppShell() {
     return (
       <div className="auth-screen">
         <section className="auth-screen__panel panel">
-          <div className="auth-screen__badge">EatMap</div>
+          <div className="auth-screen__badge">PlanEat</div>
           <p>Loading…</p>
         </section>
       </div>
@@ -961,7 +961,7 @@ function AppShell() {
     return (
       <div className="auth-screen">
         <section className="auth-screen__panel panel">
-          <div className="auth-screen__badge">EatMap</div>
+          <div className="auth-screen__badge">PlanEat</div>
           <div className="auth-screen__copy">
             <p className="eyebrow">Trip planning social map</p>
             <h1>Sign in to continue.</h1>
@@ -1016,7 +1016,7 @@ function AppShell() {
     return (
       <div className="auth-screen">
         <section className="auth-screen__panel panel">
-          <div className="auth-screen__badge">EatMap</div>
+          <div className="auth-screen__badge">PlanEat</div>
           <p>{dataError ? 'Something went wrong loading your trips.' : 'Loading your trips…'}</p>
         </section>
       </div>
@@ -1534,7 +1534,9 @@ function AppShell() {
     <div className="app-shell">
       <header className="topbar">
         <div className="topbar__brand">
-          <strong>EatMap</strong>
+          <strong>
+            PlanE<span className="topbar__brand-falling-a">a</span>t
+          </strong>
         </div>
 
         <nav className="topbar__nav" aria-label="Main navigation">
