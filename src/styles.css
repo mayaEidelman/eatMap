@@ -619,7 +619,12 @@ button {
   gap: 10px;
 }
 
-.sidebar-timeline__dot {
+/* The extra `.sidebar-timeline__stop` qualifier isn't decorative -- `.account-list-sidebar__item
+   span { display: block }` above outweighs a single-class selector's specificity and was silently
+   overriding `display: flex` here, leaving align-items/justify-content set but inert (the element
+   was never actually a flex container). This is the actual reason the icon rendered pinned to the
+   top-left instead of centered -- not a font/engine quirk. */
+.sidebar-timeline__stop .sidebar-timeline__dot {
   width: 26px;
   height: 26px;
   flex-shrink: 0;
@@ -631,10 +636,6 @@ button {
   box-shadow: 0 2px 6px rgba(74, 74, 74, 0.18);
 }
 
-/* Locks the icon's box down via CSS rather than trusting the width/height lucide-react sets as
-   SVG attributes -- SVG defaults to inline (not block) display, which some engines give a bit of
-   baseline/line-height padding the way an inline <img> does, throwing off flex centering. Forcing
-   block display and an explicit CSS size removes that ambiguity. */
 .sidebar-timeline__dot svg {
   display: block;
   width: 14px;
