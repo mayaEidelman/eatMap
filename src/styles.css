@@ -572,6 +572,8 @@ button {
   align-items: flex-start;
   gap: 8px;
   width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
   border: 0;
   background: none;
   padding: 4px;
@@ -605,14 +607,16 @@ button {
 
 .sidebar-timeline__row {
   display: grid;
-  grid-template-columns: 28px 1fr;
-  gap: 10px;
+  gap: 2px;
 }
 
-.sidebar-timeline__marker {
+/* Dot and name sit in one flex row so their vertical centers always line up with each other --
+   independent of either element's own font metrics/line-height, unlike lining up two separate
+   grid columns by trusting both happen to flow flush with the row's top edge. */
+.sidebar-timeline__stop {
   display: flex;
-  flex-direction: column;
   align-items: center;
+  gap: 10px;
 }
 
 .sidebar-timeline__dot {
@@ -620,18 +624,20 @@ button {
   height: 26px;
   flex-shrink: 0;
   border-radius: 50%;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
   color: white;
   font-size: 0.8rem;
   box-shadow: 0 2px 6px rgba(74, 74, 74, 0.18);
 }
 
-.sidebar-timeline__line-wrap {
+/* Same 26px width as the dot above it, so the line centers directly beneath the dot's center. */
+.sidebar-timeline__connector {
   position: relative;
-  flex: 1;
-  min-height: 44px;
-  margin-top: 4px;
+  width: 26px;
+  min-height: 32px;
   display: flex;
   justify-content: center;
 }
@@ -646,8 +652,8 @@ button {
 .sidebar-timeline__distance {
   position: absolute;
   top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  left: 4px;
+  transform: translateY(-50%);
   white-space: nowrap;
   background: var(--panel-strong);
   border: 1px solid var(--border);
@@ -660,11 +666,14 @@ button {
 }
 
 .sidebar-timeline__content {
+  flex: 1;
+  min-width: 0;
   display: block;
-  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
   border: 0;
   background: none;
-  padding: 0 0 4px;
+  padding: 8px 0;
   margin: 0;
   text-align: left;
   font: inherit;

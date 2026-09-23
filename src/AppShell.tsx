@@ -4447,21 +4447,21 @@ function SidebarListItem({
                         const nextPlace = index < activityPlaces.length - 1 ? activityPlaces[index + 1] : null;
                         return (
                           <li key={place.id} className="sidebar-timeline__row">
-                            <div className="sidebar-timeline__marker">
+                            <div className="sidebar-timeline__stop">
                               <span className="sidebar-timeline__dot" style={{ background: markerColor }} aria-hidden="true">
                                 {CATEGORY_META[place.category].icon}
                               </span>
-                              {nextPlace ? (
-                                <div className="sidebar-timeline__line-wrap">
-                                  <span className="sidebar-timeline__line" style={{ background: markerColor }} />
-                                  <SidebarTravelSegment origin={place} destination={nextPlace} />
-                                </div>
-                              ) : null}
+                              <button type="button" className="sidebar-timeline__content" onClick={() => onFocusPlace(place.id)}>
+                                <strong>{place.name}</strong>
+                                {timeLabel ? <small>{timeLabel}</small> : null}
+                              </button>
                             </div>
-                            <button type="button" className="sidebar-timeline__content" onClick={() => onFocusPlace(place.id)}>
-                              <strong>{place.name}</strong>
-                              {timeLabel ? <small>{timeLabel}</small> : null}
-                            </button>
+                            {nextPlace ? (
+                              <div className="sidebar-timeline__connector">
+                                <span className="sidebar-timeline__line" style={{ background: markerColor }} />
+                                <SidebarTravelSegment origin={place} destination={nextPlace} />
+                              </div>
+                            ) : null}
                           </li>
                         );
                       })}
@@ -4511,7 +4511,7 @@ function SidebarTravelSegment({ origin, destination }: { origin: Place; destinat
 
   return (
     <span className="sidebar-timeline__distance" title="Driving distance to the next stop">
-      🚗 {result.distanceText}
+      {result.distanceText}
     </span>
   );
 }
