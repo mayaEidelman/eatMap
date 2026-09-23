@@ -492,7 +492,11 @@ export function MapPanel({
     }
 
     map.panTo(position);
-    map.setZoom(15);
+    // 15 was close to street-level (a block or two of context around the pin) -- 14 keeps the pin
+    // clearly centered while leaving enough of the surrounding area visible to actually orient
+    // yourself, which also makes it easier to line up the next tap (the bookmark icon in the
+    // popup) without the map having jumped in tight right before it.
+    map.setZoom(14);
   }, [previewPlace, previewPlaceSaved, ready]);
 
   // `locateRequestToken` starts undefined/0, which is falsy, so this is a no-op until the caller
