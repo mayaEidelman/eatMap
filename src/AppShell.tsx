@@ -1,5 +1,17 @@
 import { ChangeEvent, FormEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Compass, DollarSign, Map as MapIcon, MessageCircle, Plus, Route, Search, Trash2, User as UserIcon, UserPlus } from 'lucide-react';
+import {
+  Compass,
+  DollarSign,
+  LocateFixed,
+  Map as MapIcon,
+  MessageCircle,
+  Plus,
+  Route,
+  Search,
+  Trash2,
+  User as UserIcon,
+  UserPlus,
+} from 'lucide-react';
 import { ImportPlacesModal } from './components/ImportPlacesModal';
 import { MapPanel } from './components/MapPanel';
 import { PlaceAutocomplete, type PlaceSearchResult } from './components/PlaceAutocomplete';
@@ -143,12 +155,16 @@ function formatTimeRange(range: PlaceTimeRange | undefined): string {
 
 /** "Day 2 · Tokyo · 14/03" -- day label plus its destination and date (dd/mm, parsed by hand
  * rather than through Date so a plain "YYYY-MM-DD" string never risks a local-timezone shift). */
+// Auto-generated days carry a verbose date baked into the label itself ("Day 10 · Mon, Oct 5") --
+// this pulls out just the "Day N" part. Manually-added labels have no " · " to split on, so it's a
+// no-op for them.
+function getDayNumberLabel(tripDay: TripDay): string {
+  return tripDay.label.split(' · ')[0];
+}
+
 function formatDayOptionLabel(tripDay: TripDay): string {
-  // Auto-generated days carry a verbose date baked into the label itself ("Day 10 · Mon, Oct 5")
-  // -- keep just the "Day N" part here since the date gets re-added below in compact dd/mm form.
-  // Manually-added labels have no " · " to split on, so this is a no-op for them.
-  const dayNumber = tripDay.label.split(' · ')[0];
-  const parts = [dayNumber];
+  // Keep just the "Day N" part here since the date gets re-added below in compact dd/mm form.
+  const parts = [getDayNumberLabel(tripDay)];
   if (tripDay.destination) parts.push(tripDay.destination);
   if (tripDay.date) {
     const [, month, day] = tripDay.date.split('-');
@@ -417,6 +433,8 @@ function AppShell() {
   const [selectedPlaceIds, setSelectedPlaceIds] = useState<Set<string>>(new Set());
   const [groupTargetDayId, setGroupTargetDayId] = useState('');
   const [groupError, setGroupError] = useState<string | null>(null);
+  const [locateRequestToken, setLocateRequestToken] = useState(0);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const mapSidebarRef = useRef<HTMLElement | null>(null);
   const sheetDrag = useRef<{ startY: number; startHeight: number } | null>(null);
   const [recentlyWatchedListIds, setRecentlyWatchedListIds] = useState<string[]>(() => {
@@ -1562,6 +1580,8 @@ function AppShell() {
             selectMode={placeSelectMode}
             selectedPlaceIds={selectedPlaceIds}
             onTogglePlaceSelect={togglePlaceSelection}
+            locateRequestToken={locateRequestToken}
+            onLocationError={setLocationError}
           />
 
           {sidebarOpen ? (
@@ -1722,6 +1742,19 @@ function AppShell() {
               >
                 <Plus aria-hidden="true" size={19} strokeWidth={1.75} />
               </button>
+              <button
+                className="map-search-float__button icon-button"
+                type="button"
+                onClick={() => {
+                  setLocationError(null);
+                  setLocateRequestToken((token) => token + 1);
+                }}
+                aria-label="Show my location"
+                title="Show my location"
+              >
+                <LocateFixed aria-hidden="true" size={19} strokeWidth={1.75} />
+              </button>
+              {locationError ? <p className="map-location-error place-autocomplete__error">{locationError}</p> : null}
               {canGroupSelectedList ? (
                 <button
                   className="map-search-float__button icon-button"
@@ -2731,6 +2764,7 @@ function AppShell() {
               days={listDetail.days}
               places={listDetail.places}
               isOwner={listDetailOwner?.id === currentUser.id}
+              canSeeDates={listDetailCanEdit}
               attachments={listDetailOwner?.id === currentUser.id ? listDetail.placeAttachments ?? {} : null}
               currentUserId={data.currentUserId}
               onSaveAttachment={(placeId, attachment) => updatePlaceAttachment(placeId, attachment)}
@@ -3522,6 +3556,7 @@ function TripPlanView({
   days,
   places,
   isOwner,
+  canSeeDates,
   attachments,
   currentUserId,
   onSaveAttachment,
@@ -3529,6 +3564,10 @@ function TripPlanView({
   days: TripDay[];
   places: Place[];
   isOwner: boolean;
+  /** Owner or accepted collaborator -- separate from `isOwner` (which gates the private
+   * attachment editor specifically). Other viewers still see every day, just as "Day N" instead
+   * of the actual calendar date, so the trip's exact dates aren't public. */
+  canSeeDates: boolean;
   attachments: Record<string, PlaceAttachment> | null;
   currentUserId: string;
   onSaveAttachment: (placeId: string, attachment: PlaceAttachment | null) => Promise<void>;
@@ -3577,7 +3616,7 @@ function TripPlanView({
                   {tripDay.destination}
                 </div>
               ) : null}
-              <strong>{tripDay.label}</strong>
+              <strong>{canSeeDates ? tripDay.label : getDayNumberLabel(tripDay)}</strong>
               {hotel?.kind === 'switch' ? (
                 <div className="trip-plan-view__hotel trip-plan-view__hotel--switch">
                   <span aria-hidden="true">🔄</span> {hotel.from.name} → {hotel.to.name}
@@ -3622,7 +3661,7 @@ function TripPlanView({
 
             return (
             <div key={tripDay.id} className="trip-timeline__day">
-              <div className="trip-timeline__day-label">{tripDay.label}</div>
+              <div className="trip-timeline__day-label">{canSeeDates ? tripDay.label : getDayNumberLabel(tripDay)}</div>
               {hotel ? (
                 (() => {
                   const referenceHotel = hotel.kind === 'switch' ? hotel.to : hotel.hotel;

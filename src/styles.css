@@ -25,6 +25,11 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
+  /* Belt-and-suspenders: no matter what overflows somewhere deep in the tree (see
+     .trip-plan-editor above for a real example), the page itself should never gain horizontal
+     scroll -- any content that's genuinely wider than the viewport should scroll inside its own
+     container, not drag the whole document sideways. */
+  overflow-x: hidden;
   color: var(--ink);
   font-family: 'Manrope', sans-serif;
   background:
@@ -2491,6 +2496,21 @@ button.stat-pill {
   gap: 8px;
 }
 
+.map-location-error {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  max-width: calc(100vw - 54px);
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  font-size: 0.82rem;
+}
+
 .map-group-panel {
   position: relative;
   display: flex;
@@ -2803,6 +2823,13 @@ button.stat-pill {
 
 .trip-plan-editor {
   display: grid;
+  /* Without an explicit column size, an implicit single-column grid sizes itself to its content's
+     intrinsic width -- so .trip-plan-days' row of fixed-width day cards was growing this column
+     (and the modal, and the whole page) wider than the viewport instead of respecting it, even
+     though that row already has its own `overflow-x: auto`. minmax(0, 1fr) makes the column (and
+     everything depending on it) actually shrink to the available width, so that inner scroll finally
+     stays contained to just the day-card row, which is what was breaking narrow/phone screens. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 

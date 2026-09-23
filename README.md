@@ -47,3 +47,5 @@ npm run dev
 - Save/bookmark other people's lists to your own map sidebar
 - Social accounts with follow/unfollow, ratings with notes, and DMs — all backed by Postgres tables
 - Private per-place attachments (notes, tickets/confirmations) visible only to the list owner, enforced by database Row Level Security rather than just client-side hiding
+
+https://eat-qrgsrdhmk-maya-ac4e.vercel.app/
