@@ -2621,7 +2621,10 @@ button.stat-pill {
 }
 
 .map-group-panel--open {
-  max-width: 640px;
+  /* Capped against the actual viewport (not just a flat 640px) so the panel can never render wider
+     than the screen has room for regardless of how much its content wants -- 90px accounts for the
+     button column's own left offset + width + gap that it opens beside. */
+  max-width: min(640px, calc(100vw - 90px));
   opacity: 1;
   padding: 0 8px 0 16px;
   pointer-events: auto;
@@ -2638,8 +2641,8 @@ button.stat-pill {
 .map-group-panel__select {
   flex-shrink: 1;
   min-width: 0;
-  max-width: 220px;
-  padding: 8px 30px 8px 14px;
+  max-width: 130px;
+  padding: 8px 26px 8px 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.9)
