@@ -31,6 +31,10 @@ type MapPanelProps = {
   selectMode?: boolean;
   selectedPlaceIds?: Set<string>;
   onTogglePlaceSelect?: (placeId: string) => void;
+  /** Places to render faded (lower opacity, thinner outline) instead of at full strength --
+   * used to keep a trip day's own places easy to pick out while the rest of the list's places
+   * stay visible on the map for context rather than being hidden outright. */
+  dimmedPlaceIds?: Set<string>;
   /** Bump this (e.g. a counter incremented on button click) to trigger a one-time "locate me" --
    * pans/zooms to the device's current position and drops a "you are here" marker. A counter prop
    * rather than an imperative ref method, to match how `previewPlace` etc. already drive this
@@ -186,6 +190,7 @@ export function MapPanel({
   selectMode,
   selectedPlaceIds,
   onTogglePlaceSelect,
+  dimmedPlaceIds,
   locateRequestToken,
   onLocationError,
 }: MapPanelProps) {
@@ -334,6 +339,7 @@ export function MapPanel({
         const position = { lat: placeItem.lat, lng: placeItem.lng };
         const isSelectable = Boolean(selectMode) && active;
         const isSelected = isSelectable && Boolean(selectedPlaceIds?.has(placeItem.id));
+        const isDimmed = Boolean(dimmedPlaceIds?.has(placeItem.id));
         const marker = new window.google.maps.Marker({
           position,
           map,
@@ -341,20 +347,23 @@ export function MapPanel({
           // Bigger than Google's own POI icons and carrying a category emoji + the list's chosen
           // color, so these read as clearly distinct from the native icons now sharing the map.
           // Selected markers (grouping mode) get a green fill + checkmark instead, so which pins
-          // are already picked is obvious without opening anything.
+          // are already picked is obvious without opening anything. Places not scheduled into the
+          // day currently being viewed are faded (lower fill opacity, thinner outline) rather than
+          // hidden, so the day's own places stand out without losing the rest of the trip.
           icon: {
             path: window.google.maps.SymbolPath.CIRCLE,
             scale: isSelected ? 16 : active ? 15 : 12,
             fillColor: isSelected ? '#2f8f5b' : color,
-            fillOpacity: 1,
+            fillOpacity: isDimmed ? 0.35 : 1,
             strokeColor: '#ffffff',
-            strokeWeight: isSelected ? 3 : 2,
+            strokeOpacity: isDimmed ? 0.6 : 1,
+            strokeWeight: isSelected ? 3 : isDimmed ? 1 : 2,
           },
           label: {
             text: isSelected ? '✓' : CATEGORY_META[placeItem.category].icon,
             fontSize: active ? '15px' : '12px',
           },
-          zIndex: isSelected ? 1000 : active ? 999 : 1,
+          zIndex: isSelected ? 1000 : active ? 999 : isDimmed ? 0 : 1,
         });
 
         marker.addListener('click', () => {
@@ -390,7 +399,7 @@ export function MapPanel({
         markers.current.push(marker);
       });
     });
-  }, [lists, selectedListId, onSelectList, ready, selectMode, selectedPlaceIds, onTogglePlaceSelect]);
+  }, [lists, selectedListId, onSelectList, ready, selectMode, selectedPlaceIds, onTogglePlaceSelect, dimmedPlaceIds]);
 
   // Split out from marker rebuilding above so toggling a place's selection (which also rebuilds
   // markers, to recolor the clicked pin) never re-fits/re-zooms the viewport -- only an actual
@@ -412,10 +421,15 @@ export function MapPanel({
 
     const selected = lists.find((list) => list.id === selectedListId);
     if (selected && selected.places.length) {
+      // Faded (dimmed) places stay on the map for context but shouldn't pull the camera's fit
+      // wide to include them -- zoom in on whichever places are currently highlighted, falling
+      // back to the full list only if every one of its places happens to be dimmed.
+      const highlightedPlaces = selected.places.filter((placeItem) => !dimmedPlaceIds?.has(placeItem.id));
+      const placesToFit = highlightedPlaces.length ? highlightedPlaces : selected.places;
       const selectedBounds = new window.google.maps.LatLngBounds();
-      selected.places.forEach((placeItem) => selectedBounds.extend({ lat: placeItem.lat, lng: placeItem.lng }));
+      placesToFit.forEach((placeItem) => selectedBounds.extend({ lat: placeItem.lat, lng: placeItem.lng }));
       map.fitBounds(selectedBounds, 80);
-      if (selected.places.length === 1) {
+      if (placesToFit.length === 1) {
         map.setZoom(13);
       }
     } else if (hasPoints) {
@@ -424,7 +438,7 @@ export function MapPanel({
       map.setCenter(defaultCenter);
       map.setZoom(defaultZoom);
     }
-  }, [lists, selectedListId, ready]);
+  }, [lists, selectedListId, ready, dimmedPlaceIds]);
 
   useEffect(() => {
     const map = mapInstance.current;

@@ -721,8 +721,11 @@ function AppShell() {
     [accountLists, collaboratingLists, savedLists, recentlyWatchedLists],
   );
 
-  // When a list's sidebar timeline is open and a specific day is picked, the map should only
-  // show that day's places; closed (or open with no day picked, i.e. "all days") shows everything.
+  // When a list's sidebar timeline is open with no specific day picked ("all days"), the map
+  // shows everything scheduled into a day, not every saved place (some may never have been
+  // dragged into the plan). Picking a specific day no longer hides the rest of the list's
+  // places -- they stay visible but faded (see mapDimmedPlaceIds below) so the day's own
+  // places can be picked out without losing the rest of the trip for context.
   const mapDisplayLists = useMemo(() => {
     return myMapLists.map((list) => {
       if (!openTimelineListIds.has(list.id)) {
@@ -731,12 +734,39 @@ function AppShell() {
 
       const selectedDayId = selectedDayByListId[list.id];
       const day = selectedDayId ? list.days.find((tripDay) => tripDay.id === selectedDayId) : undefined;
-      // Timeline open with no specific day picked ("All days") -- show everything scheduled
-      // into a day, not every saved place (some may never have been dragged into the plan).
-      const visiblePlaceIds = day ? new Set(day.placeIds) : getScheduledPlaceIds(list);
+      if (day) {
+        return list;
+      }
 
+      const visiblePlaceIds = getScheduledPlaceIds(list);
       return { ...list, places: list.places.filter((place) => visiblePlaceIds.has(place.id)) };
     });
+  }, [myMapLists, openTimelineListIds, selectedDayByListId]);
+
+  // Places belonging to a list whose timeline is open on a specific day, but not scheduled into
+  // that day -- rendered faded/brighter on the map instead of hidden, so the selected day's
+  // places stand out while the rest of the trip stays visible for context.
+  const mapDimmedPlaceIds = useMemo(() => {
+    const dimmed = new Set<string>();
+    myMapLists.forEach((list) => {
+      if (!openTimelineListIds.has(list.id)) {
+        return;
+      }
+
+      const selectedDayId = selectedDayByListId[list.id];
+      const day = selectedDayId ? list.days.find((tripDay) => tripDay.id === selectedDayId) : undefined;
+      if (!day) {
+        return;
+      }
+
+      const dayPlaceIds = new Set(day.placeIds);
+      list.places.forEach((place) => {
+        if (!dayPlaceIds.has(place.id)) {
+          dimmed.add(place.id);
+        }
+      });
+    });
+    return dimmed;
   }, [myMapLists, openTimelineListIds, selectedDayByListId]);
 
   // Grouping only makes sense for a list actually shown on the map, with days to group into, and
@@ -1607,6 +1637,7 @@ function AppShell() {
             selectMode={placeSelectMode}
             selectedPlaceIds={selectedPlaceIds}
             onTogglePlaceSelect={togglePlaceSelection}
+            dimmedPlaceIds={mapDimmedPlaceIds}
             locateRequestToken={locateRequestToken}
             onLocationError={setLocationError}
           />
