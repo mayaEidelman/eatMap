@@ -3471,31 +3471,48 @@ function AppShell() {
                     </div>
                   </div>
 
-                  {acceptedGroupMembers.map(({ user }) => {
-                    const checked = expenseForm.participantIds.includes(user.id);
-                    return (
-                      <div key={user.id} className="expense-form__participant">
-                        <label className="expense-form__participant-check">
-                          <input type="checkbox" checked={checked} onChange={() => toggleExpenseParticipant(user.id)} />
-                          {user.name}
-                        </label>
-                        {checked && expenseForm.splitMode === 'custom' ? (
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={expenseForm.customAmounts[user.id] ?? ''}
-                            onChange={(event) =>
-                              setExpenseForm((current) => ({
-                                ...current,
-                                customAmounts: { ...current.customAmounts, [user.id]: event.target.value },
-                              }))
-                            }
-                          />
-                        ) : null}
-                      </div>
-                    );
-                  })}
+                  <div className="expense-participants">
+                    {acceptedGroupMembers.map(({ user }) => {
+                      const checked = expenseForm.participantIds.includes(user.id);
+                      return (
+                        <button
+                          key={user.id}
+                          type="button"
+                          className={`expense-participant-avatar${checked ? ' expense-participant-avatar--selected' : ''}`}
+                          onClick={() => toggleExpenseParticipant(user.id)}
+                          aria-pressed={checked}
+                          aria-label={user.name}
+                          title={user.name}
+                        >
+                          <Avatar user={user} className="dm-thread__avatar" />
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {expenseForm.splitMode === 'custom' && expenseForm.participantIds.length > 0 ? (
+                    <div className="expense-participants__amounts">
+                      {acceptedGroupMembers
+                        .filter(({ user }) => expenseForm.participantIds.includes(user.id))
+                        .map(({ user }) => (
+                          <label key={user.id} className="expense-participants__amount-row">
+                            <span>{user.name}</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={expenseForm.customAmounts[user.id] ?? ''}
+                              onChange={(event) =>
+                                setExpenseForm((current) => ({
+                                  ...current,
+                                  customAmounts: { ...current.customAmounts, [user.id]: event.target.value },
+                                }))
+                              }
+                            />
+                          </label>
+                        ))}
+                    </div>
+                  ) : null}
                 </div>
 
                 {addExpenseError ? <p className="form-grid__full place-autocomplete__error">{addExpenseError}</p> : null}
