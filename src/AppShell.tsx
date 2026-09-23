@@ -155,12 +155,16 @@ function formatTimeRange(range: PlaceTimeRange | undefined): string {
 
 /** "Day 2 · Tokyo · 14/03" -- day label plus its destination and date (dd/mm, parsed by hand
  * rather than through Date so a plain "YYYY-MM-DD" string never risks a local-timezone shift). */
+// Auto-generated days carry a verbose date baked into the label itself ("Day 10 · Mon, Oct 5") --
+// this pulls out just the "Day N" part. Manually-added labels have no " · " to split on, so it's a
+// no-op for them.
+function getDayNumberLabel(tripDay: TripDay): string {
+  return tripDay.label.split(' · ')[0];
+}
+
 function formatDayOptionLabel(tripDay: TripDay): string {
-  // Auto-generated days carry a verbose date baked into the label itself ("Day 10 · Mon, Oct 5")
-  // -- keep just the "Day N" part here since the date gets re-added below in compact dd/mm form.
-  // Manually-added labels have no " · " to split on, so this is a no-op for them.
-  const dayNumber = tripDay.label.split(' · ')[0];
-  const parts = [dayNumber];
+  // Keep just the "Day N" part here since the date gets re-added below in compact dd/mm form.
+  const parts = [getDayNumberLabel(tripDay)];
   if (tripDay.destination) parts.push(tripDay.destination);
   if (tripDay.date) {
     const [, month, day] = tripDay.date.split('-');
@@ -2760,6 +2764,7 @@ function AppShell() {
               days={listDetail.days}
               places={listDetail.places}
               isOwner={listDetailOwner?.id === currentUser.id}
+              canSeeDates={listDetailCanEdit}
               attachments={listDetailOwner?.id === currentUser.id ? listDetail.placeAttachments ?? {} : null}
               currentUserId={data.currentUserId}
               onSaveAttachment={(placeId, attachment) => updatePlaceAttachment(placeId, attachment)}
@@ -3551,6 +3556,7 @@ function TripPlanView({
   days,
   places,
   isOwner,
+  canSeeDates,
   attachments,
   currentUserId,
   onSaveAttachment,
@@ -3558,6 +3564,10 @@ function TripPlanView({
   days: TripDay[];
   places: Place[];
   isOwner: boolean;
+  /** Owner or accepted collaborator -- separate from `isOwner` (which gates the private
+   * attachment editor specifically). Other viewers still see every day, just as "Day N" instead
+   * of the actual calendar date, so the trip's exact dates aren't public. */
+  canSeeDates: boolean;
   attachments: Record<string, PlaceAttachment> | null;
   currentUserId: string;
   onSaveAttachment: (placeId: string, attachment: PlaceAttachment | null) => Promise<void>;
@@ -3606,7 +3616,7 @@ function TripPlanView({
                   {tripDay.destination}
                 </div>
               ) : null}
-              <strong>{tripDay.label}</strong>
+              <strong>{canSeeDates ? tripDay.label : getDayNumberLabel(tripDay)}</strong>
               {hotel?.kind === 'switch' ? (
                 <div className="trip-plan-view__hotel trip-plan-view__hotel--switch">
                   <span aria-hidden="true">🔄</span> {hotel.from.name} → {hotel.to.name}
@@ -3651,7 +3661,7 @@ function TripPlanView({
 
             return (
             <div key={tripDay.id} className="trip-timeline__day">
-              <div className="trip-timeline__day-label">{tripDay.label}</div>
+              <div className="trip-timeline__day-label">{canSeeDates ? tripDay.label : getDayNumberLabel(tripDay)}</div>
               {hotel ? (
                 (() => {
                   const referenceHotel = hotel.kind === 'switch' ? hotel.to : hotel.hotel;
