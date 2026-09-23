@@ -411,8 +411,9 @@ function AppShell() {
   const [listDetailId, setListDetailId] = useState<string | null>(null);
   const [peopleListOpen, setPeopleListOpen] = useState<{ userId: string; mode: 'followers' | 'following' } | null>(null);
   const [viewedProfileId, setViewedProfileId] = useState<string | null>(null);
-  const [dmThreadUserId, setDmThreadUserId] = useState<string>('');
+  const [dmThreadUserId, setDmThreadUserId] = useState<string | null>(null);
   const [dmDraft, setDmDraft] = useState('');
+  const [dmSearchQuery, setDmSearchQuery] = useState('');
   const [composerOpen, setComposerOpen] = useState(false);
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [listFormMode, setListFormMode] = useState<'create' | 'edit'>('create');
@@ -878,11 +879,32 @@ function AppShell() {
     color: defaultColorForIndex(index),
   }));
 
-  useEffect(() => {
-    if (!dmThreadUserId && peopleToFollow[0]) {
-      setDmThreadUserId(peopleToFollow[0].id);
-    }
-  }, [dmThreadUserId, peopleToFollow]);
+  // Conversations you've actually exchanged messages with, most recent first -- the DM page's
+  // main view (see below) shows only these, not every registered user; searching (via dmSearchQuery)
+  // is the separate path to start a new one.
+  const dmConversations = useMemo(() => {
+    if (!data) return [];
+    const lastMessageAt = new Map<string, string>();
+    dmMessages.forEach((message) => {
+      const otherId = message.fromId === data.currentUserId ? message.toId : message.fromId;
+      if (otherId === data.currentUserId) return;
+      const existing = lastMessageAt.get(otherId);
+      if (!existing || message.createdAt > existing) {
+        lastMessageAt.set(otherId, message.createdAt);
+      }
+    });
+    return Array.from(lastMessageAt.entries())
+      .sort(([, aTime], [, bTime]) => (aTime < bTime ? 1 : -1))
+      .map(([userId]) => data.users.find((user) => user.id === userId))
+      .filter((user): user is User => Boolean(user));
+  }, [dmMessages, data]);
+
+  const normalizedDmSearch = dmSearchQuery.trim().toLowerCase();
+  const dmSearchResults = normalizedDmSearch
+    ? peopleToFollow.filter(
+        (user) => user.name.toLowerCase().includes(normalizedDmSearch) || user.handle.toLowerCase().includes(normalizedDmSearch),
+      )
+    : [];
 
   const listDetailRatingSummary =
     data && listDetail ? getListSummary(listDetail.id, data.ratings) : { count: 0, average: 0 };
@@ -1856,33 +1878,63 @@ function AppShell() {
 
       {page === 'dm' ? (
         <div className="dm-page panel page-transition">
-          <div className="dm-page__list">
-            <div className="section-heading">
-              <h3>Direct messages</h3>
-              <span>{peopleToFollow.length}</span>
-            </div>
-            <div className="dm-list">
-              {peopleToFollow.map((user) => (
-                <button
-                  key={user.id}
-                  type="button"
-                  className={`dm-thread${dmThreadUserId === user.id ? ' dm-thread--active' : ''}`}
-                  onClick={() => setDmThreadUserId(user.id)}
-                >
-                  <Avatar user={user} className="dm-thread__avatar" />
-                  <span>
-                    <strong>{user.name}</strong>
-                    <small>{user.city}</small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
+          {!dmThreadUserId ? (
+            <div className="dm-page__list">
+              <div className="section-heading">
+                <h3>Direct messages</h3>
+                <span>{dmConversations.length}</span>
+              </div>
 
+              <label className="dm-search">
+                <Search size={16} aria-hidden="true" />
+                <input
+                  value={dmSearchQuery}
+                  onChange={(event) => setDmSearchQuery(event.target.value)}
+                  placeholder="Search people"
+                />
+              </label>
+
+              <div className="dm-list">
+                {(normalizedDmSearch ? dmSearchResults : dmConversations).map((user) => (
+                  <button
+                    key={user.id}
+                    type="button"
+                    className="dm-thread"
+                    onClick={() => {
+                      setDmThreadUserId(user.id);
+                      setDmSearchQuery('');
+                    }}
+                  >
+                    <Avatar user={user} className="dm-thread__avatar" />
+                    <span>
+                      <strong>{user.name}</strong>
+                      <small>{user.city}</small>
+                    </span>
+                  </button>
+                ))}
+                {!normalizedDmSearch && dmConversations.length === 0 ? (
+                  <p className="sidebar__empty">No conversations yet -- search for someone to start one.</p>
+                ) : null}
+                {normalizedDmSearch && dmSearchResults.length === 0 ? (
+                  <p className="sidebar__empty">No matching travelers.</p>
+                ) : null}
+              </div>
+            </div>
+          ) : (
           <div className="dm-page__chat">
             <div className="dm-chat__header">
-              <strong>{data.users.find((user) => user.id === dmThreadUserId)?.name ?? 'Choose a thread'}</strong>
-              <span>route planning talk</span>
+              <button className="dm-chat__back" type="button" onClick={() => setDmThreadUserId(null)} aria-label="Back to messages">
+                ‹
+              </button>
+              {(() => {
+                const dmThreadUser = data.users.find((user) => user.id === dmThreadUserId);
+                return (
+                  <>
+                    <Avatar user={dmThreadUser} className="dm-thread__avatar" />
+                    <strong>{dmThreadUser?.name ?? 'Conversation'}</strong>
+                  </>
+                );
+              })()}
             </div>
 
             <div className="dm-chat__messages">
@@ -1958,6 +2010,7 @@ function AppShell() {
               </button>
             </div>
           </div>
+          )}
         </div>
       ) : null}
 
