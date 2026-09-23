@@ -1,19 +1,27 @@
 import { ChangeEvent, FormEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Bed,
+  Coffee,
   Compass,
   Croissant,
   DollarSign,
   Globe,
+  Leaf,
   LocateFixed,
   Map as MapIcon,
+  MapPin,
   MessageCircle,
+  Moon,
+  Pin,
   Plus,
   Route,
   Search,
+  ShoppingBag,
   Sparkle,
   Trash2,
   User as UserIcon,
   UserPlus,
+  Utensils,
 } from 'lucide-react';
 import { ImportPlacesModal } from './components/ImportPlacesModal';
 import { MapPanel } from './components/MapPanel';
@@ -62,6 +70,23 @@ const DEFAULT_COVER = 'https://images.unsplash.com/photo-1502920917128-1aa500764
 
 const RECENTLY_WATCHED_KEY = 'planeat:recently-watched-lists';
 const RECENTLY_WATCHED_LIMIT = 3;
+
+/** Vector equivalents of CATEGORY_META's emoji, used only for the sidebar timeline's dot markers.
+ * Emoji glyphs sit inside font-defined boxes whose visual ink isn't necessarily centered within
+ * that box (varies by platform emoji font -- Apple/Noto/Segoe all differ), so no amount of flex
+ * centering fully centers them; an SVG icon has an exact, predictable box, so it centers reliably
+ * everywhere. Left as emoji everywhere else (map marker labels are plain text -- Google's Marker
+ * API doesn't accept JSX there -- and changing the look of every other emoji use wasn't asked for). */
+const CATEGORY_DOT_ICON: Record<PlaceCategory, typeof MapPin> = {
+  food: Utensils,
+  attraction: MapPin,
+  hotel: Bed,
+  cafe: Coffee,
+  shopping: ShoppingBag,
+  nature: Leaf,
+  nightlife: Moon,
+  other: Pin,
+};
 
 /** Places actually assigned to some day -- excludes places saved to the list but never dragged
  * into the trip plan, so "All days" in the timeline means "everything scheduled," not
@@ -4445,11 +4470,12 @@ function SidebarListItem({
                         const timeLabel = formatTimeRange(selectedDay.placeTimes?.[place.id]);
                         const markerColor = LIST_MARKER_COLORS[index % LIST_MARKER_COLORS.length];
                         const nextPlace = index < activityPlaces.length - 1 ? activityPlaces[index + 1] : null;
+                        const DotIcon = CATEGORY_DOT_ICON[place.category];
                         return (
                           <li key={place.id} className="sidebar-timeline__row">
                             <div className="sidebar-timeline__stop">
                               <span className="sidebar-timeline__dot" style={{ background: markerColor }} aria-hidden="true">
-                                {CATEGORY_META[place.category].icon}
+                                <DotIcon size={13} strokeWidth={2.25} />
                               </span>
                               <button type="button" className="sidebar-timeline__content" onClick={() => onFocusPlace(place.id)}>
                                 <strong>{place.name}</strong>

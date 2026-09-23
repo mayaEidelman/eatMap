@@ -627,10 +627,19 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  line-height: 1;
   color: white;
-  font-size: 0.8rem;
   box-shadow: 0 2px 6px rgba(74, 74, 74, 0.18);
+}
+
+/* Locks the icon's box down via CSS rather than trusting the width/height lucide-react sets as
+   SVG attributes -- SVG defaults to inline (not block) display, which some engines give a bit of
+   baseline/line-height padding the way an inline <img> does, throwing off flex centering. Forcing
+   block display and an explicit CSS size removes that ambiguity. */
+.sidebar-timeline__dot svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  stroke: white;
 }
 
 /* Same 26px width as the dot above it, so the line centers directly beneath the dot's center. */
@@ -681,8 +690,12 @@ button {
   cursor: pointer;
 }
 
-.sidebar-timeline__content:hover strong {
-  color: var(--accent-hot);
+/* (hover: hover) excludes touch devices, which fake :hover on tap and then leave it "stuck" on
+   whatever was last tapped since there's no real pointer to move away and clear it. */
+@media (hover: hover) {
+  .sidebar-timeline__content:hover strong {
+    color: var(--accent-hot);
+  }
 }
 
 .sidebar-timeline__content strong,
