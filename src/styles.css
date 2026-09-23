@@ -12,6 +12,10 @@
   --accent-hot: #cf7f95;
   --accent-sky: #eab8a8;
   --accent-teal: #4a4a4a;
+  /* Content-only height of the phone bottom nav bar (see .topbar__nav's mobile rules) -- kept as
+     one shared value since several other elements (the app shell, the map sidebar sheet) need to
+     leave exactly this much clearance above it, plus the device's own safe-area inset. */
+  --bottom-nav-height: 64px;
 }
 
 * {
@@ -1477,6 +1481,58 @@ button.stat-pill {
   }
 }
 
+/* Phone-width screens: the nav pill moves off the crowded top of the screen (where it was
+   competing with the map's own floating search/+/locate/group buttons for the same ~140px of
+   clearance) and becomes a constant Instagram-style bottom tab bar instead. The topbar itself
+   goes back to a single brand-only row, so it no longer needs the >1240px breakpoint's
+   column-stacking, and .app-shell/.map-search-float's top clearance shrinks to match.
+   `.topbar__nav` has to escape `.topbar`'s own `transform` here (that transform is what
+   normally centers the topbar, but any `transform` on an ancestor makes fixed-position
+   descendants position relative to *that ancestor's box* instead of the real viewport, per the
+   CSS containing-block spec) -- `.topbar` is switched to plain left/right insets at this width
+   instead, which centers it identically without creating that trap. */
+@media (max-width: 640px) {
+  .topbar {
+    flex-direction: row;
+    align-items: center;
+    top: 14px;
+    left: 16px;
+    right: 16px;
+    width: auto;
+    transform: none;
+  }
+
+  .app-shell {
+    padding-top: 76px;
+    padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + 16px);
+  }
+
+  .map-search-float {
+    top: 76px;
+  }
+
+  .topbar__nav {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    width: 100%;
+    height: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom));
+    justify-content: space-around;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+    border-radius: 0;
+    box-shadow: 0 -8px 24px rgba(74, 74, 74, 0.16);
+  }
+
+  .topbar__nav .nav-tab {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 4px;
+  }
+}
+
 @media (max-width: 820px) {
   .app-shell {
     width: min(100vw - 18px, 100vw);
@@ -2473,7 +2529,7 @@ button.stat-pill {
     top: auto;
     left: 0;
     right: 0;
-    bottom: 0;
+    bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom));
     width: 100%;
     height: var(--map-sheet-height, 45vh);
     max-height: 85vh;
