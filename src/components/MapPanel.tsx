@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { CATEGORY_META, guessCategoryFromTypes } from '../lib/categories';
+import { getCurrentPosition } from '../lib/geolocation';
 import { loadGoogleMaps } from '../lib/googleMaps';
 import { defaultColorForIndex } from '../lib/mapColors';
 import { fetchPlaceDetails } from '../lib/placeDetails';
@@ -30,6 +31,15 @@ type MapPanelProps = {
   selectMode?: boolean;
   selectedPlaceIds?: Set<string>;
   onTogglePlaceSelect?: (placeId: string) => void;
+  /** Bump this (e.g. a counter incremented on button click) to trigger a one-time "locate me" --
+   * pans/zooms to the device's current position and drops a "you are here" marker. A counter prop
+   * rather than an imperative ref method, to match how `previewPlace` etc. already drive this
+   * component from AppShell. Swapping the one-shot `getCurrentPosition` call this triggers for
+   * `watchPosition` (live tracking) later only touches the effect below, not this prop's shape. */
+  locateRequestToken?: number;
+  /** Fired when a locate request (see `locateRequestToken`) fails -- permission denied, position
+   * unavailable, etc. -- so the caller can surface it near whatever button triggered it. */
+  onLocationError?: (message: string) => void;
 };
 
 const defaultCenter = { lat: 20, lng: 0 };
@@ -176,11 +186,15 @@ export function MapPanel({
   selectMode,
   selectedPlaceIds,
   onTogglePlaceSelect,
+  locateRequestToken,
+  onLocationError,
 }: MapPanelProps) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstance = useRef<google.maps.Map | null>(null);
   const markers = useRef<google.maps.Marker[]>([]);
   const previewMarker = useRef<google.maps.Marker | null>(null);
+  const userLocationMarker = useRef<google.maps.Marker | null>(null);
+  const userLocationAccuracy = useRef<google.maps.Circle | null>(null);
   const infoWindow = useRef<google.maps.InfoWindow | null>(null);
   /** Bumped every time a popup opens; an in-flight `getDetails` call only applies its result if
    * this hasn't moved on to a different popup by the time it resolves. */
@@ -194,10 +208,12 @@ export function MapPanel({
   const onSavePreviewPlaceRef = useRef(onSavePreviewPlace);
   const onDismissPreviewPlaceRef = useRef(onDismissPreviewPlace);
   const onDiscoverPlaceRef = useRef(onDiscoverPlace);
+  const onLocationErrorRef = useRef(onLocationError);
   useEffect(() => {
     onSavePreviewPlaceRef.current = onSavePreviewPlace;
     onDismissPreviewPlaceRef.current = onDismissPreviewPlace;
     onDiscoverPlaceRef.current = onDiscoverPlace;
+    onLocationErrorRef.current = onLocationError;
   });
 
   useEffect(() => {
@@ -478,6 +494,61 @@ export function MapPanel({
     map.panTo(position);
     map.setZoom(15);
   }, [previewPlace, previewPlaceSaved, ready]);
+
+  // `locateRequestToken` starts undefined/0, which is falsy, so this is a no-op until the caller
+  // actually bumps it (e.g. on a "locate me" button click) -- never fires on mount by itself.
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!ready || !map || !window.google || !locateRequestToken) {
+      return;
+    }
+
+    getCurrentPosition()
+      .then((position) => {
+        map.panTo(position);
+        if ((map.getZoom() ?? 0) < 14) {
+          map.setZoom(15);
+        }
+
+        if (userLocationMarker.current) {
+          userLocationMarker.current.setPosition(position);
+        } else {
+          userLocationMarker.current = new window.google.maps.Marker({
+            position,
+            map,
+            title: 'Your location',
+            zIndex: 1001,
+            icon: {
+              path: window.google.maps.SymbolPath.CIRCLE,
+              scale: 8,
+              fillColor: '#4285f4',
+              fillOpacity: 1,
+              strokeColor: '#ffffff',
+              strokeWeight: 3,
+            },
+          });
+        }
+
+        if (userLocationAccuracy.current) {
+          userLocationAccuracy.current.setCenter(position);
+          userLocationAccuracy.current.setRadius(position.accuracy);
+        } else {
+          userLocationAccuracy.current = new window.google.maps.Circle({
+            map,
+            center: position,
+            radius: position.accuracy,
+            fillColor: '#4285f4',
+            fillOpacity: 0.15,
+            strokeColor: '#4285f4',
+            strokeOpacity: 0.35,
+            strokeWeight: 1,
+          });
+        }
+      })
+      .catch((error: Error) => {
+        onLocationErrorRef.current?.(error.message);
+      });
+  }, [locateRequestToken, ready]);
 
   return (
     <div className="map-panel">

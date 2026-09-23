@@ -1,5 +1,17 @@
 import { ChangeEvent, FormEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Compass, DollarSign, Map as MapIcon, MessageCircle, Plus, Route, Search, Trash2, User as UserIcon, UserPlus } from 'lucide-react';
+import {
+  Compass,
+  DollarSign,
+  LocateFixed,
+  Map as MapIcon,
+  MessageCircle,
+  Plus,
+  Route,
+  Search,
+  Trash2,
+  User as UserIcon,
+  UserPlus,
+} from 'lucide-react';
 import { ImportPlacesModal } from './components/ImportPlacesModal';
 import { MapPanel } from './components/MapPanel';
 import { PlaceAutocomplete, type PlaceSearchResult } from './components/PlaceAutocomplete';
@@ -417,6 +429,8 @@ function AppShell() {
   const [selectedPlaceIds, setSelectedPlaceIds] = useState<Set<string>>(new Set());
   const [groupTargetDayId, setGroupTargetDayId] = useState('');
   const [groupError, setGroupError] = useState<string | null>(null);
+  const [locateRequestToken, setLocateRequestToken] = useState(0);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const mapSidebarRef = useRef<HTMLElement | null>(null);
   const sheetDrag = useRef<{ startY: number; startHeight: number } | null>(null);
   const [recentlyWatchedListIds, setRecentlyWatchedListIds] = useState<string[]>(() => {
@@ -1562,6 +1576,8 @@ function AppShell() {
             selectMode={placeSelectMode}
             selectedPlaceIds={selectedPlaceIds}
             onTogglePlaceSelect={togglePlaceSelection}
+            locateRequestToken={locateRequestToken}
+            onLocationError={setLocationError}
           />
 
           {sidebarOpen ? (
@@ -1722,6 +1738,19 @@ function AppShell() {
               >
                 <Plus aria-hidden="true" size={19} strokeWidth={1.75} />
               </button>
+              <button
+                className="map-search-float__button icon-button"
+                type="button"
+                onClick={() => {
+                  setLocationError(null);
+                  setLocateRequestToken((token) => token + 1);
+                }}
+                aria-label="Show my location"
+                title="Show my location"
+              >
+                <LocateFixed aria-hidden="true" size={19} strokeWidth={1.75} />
+              </button>
+              {locationError ? <p className="map-location-error place-autocomplete__error">{locationError}</p> : null}
               {canGroupSelectedList ? (
                 <button
                   className="map-search-float__button icon-button"

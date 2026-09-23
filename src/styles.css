@@ -2491,6 +2491,21 @@ button.stat-pill {
   gap: 8px;
 }
 
+.map-location-error {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  max-width: calc(100vw - 54px);
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  font-size: 0.82rem;
+}
+
 .map-group-panel {
   position: relative;
   display: flex;
