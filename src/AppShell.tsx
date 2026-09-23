@@ -439,6 +439,13 @@ function AppShell() {
   const [groupError, setGroupError] = useState<string | null>(null);
   const [locateRequestToken, setLocateRequestToken] = useState(0);
   const [locationError, setLocationError] = useState<string | null>(null);
+  // Clicking a place in the sidebar timeline pans/zooms the map to it and opens its info window --
+  // `token` bumps on every click (even re-clicking the same place) so the effect in MapPanel that
+  // watches it always re-fires, the same pattern locateRequestToken already uses.
+  const [focusPlaceRequest, setFocusPlaceRequest] = useState<{ placeId: string; token: number } | null>(null);
+  const focusPlaceOnMap = useCallback((placeId: string) => {
+    setFocusPlaceRequest((current) => ({ placeId, token: (current?.token ?? 0) + 1 }));
+  }, []);
   const mapSidebarRef = useRef<HTMLElement | null>(null);
   const sheetDrag = useRef<{ startY: number; startHeight: number } | null>(null);
   const [recentlyWatchedListIds, setRecentlyWatchedListIds] = useState<string[]>(() => {
@@ -1638,6 +1645,8 @@ function AppShell() {
             selectedPlaceIds={selectedPlaceIds}
             onTogglePlaceSelect={togglePlaceSelection}
             dimmedPlaceIds={mapDimmedPlaceIds}
+            focusPlaceId={focusPlaceRequest?.placeId ?? null}
+            focusRequestToken={focusPlaceRequest?.token ?? 0}
             locateRequestToken={locateRequestToken}
             onLocationError={setLocationError}
           />
@@ -1689,6 +1698,7 @@ function AppShell() {
                         onToggleTimeline={() => toggleListTimeline(list.id)}
                         selectedDayId={selectedDayByListId[list.id] ?? null}
                         onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                        onFocusPlace={focusPlaceOnMap}
                       />
                     ))
                   ) : (
@@ -1715,6 +1725,7 @@ function AppShell() {
                         onToggleTimeline={() => toggleListTimeline(list.id)}
                         selectedDayId={selectedDayByListId[list.id] ?? null}
                         onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                        onFocusPlace={focusPlaceOnMap}
                       />
                     ))}
                   </div>
@@ -1739,6 +1750,7 @@ function AppShell() {
                         onToggleTimeline={() => toggleListTimeline(list.id)}
                         selectedDayId={selectedDayByListId[list.id] ?? null}
                         onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                        onFocusPlace={focusPlaceOnMap}
                       />
                     ))
                   ) : (
@@ -1765,6 +1777,7 @@ function AppShell() {
                         onToggleTimeline={() => toggleListTimeline(list.id)}
                         selectedDayId={selectedDayByListId[list.id] ?? null}
                         onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                        onFocusPlace={focusPlaceOnMap}
                       />
                     ))}
                   </div>
@@ -4356,6 +4369,7 @@ function SidebarListItem({
   onToggleTimeline,
   selectedDayId,
   onSelectDay,
+  onFocusPlace,
 }: {
   list: TripList;
   active: boolean;
@@ -4366,9 +4380,13 @@ function SidebarListItem({
   /** null = "All days" -- every place in the list, not just one day's. */
   selectedDayId: string | null;
   onSelectDay: (dayId: string | null) => void;
+  /** Pans/zooms the map to a place and opens its info window. */
+  onFocusPlace: (placeId: string) => void;
 }) {
   const selectedDay = selectedDayId ? list.days.find((day) => day.id === selectedDayId) ?? null : null;
-  const scheduledPlaceIds = selectedDay ? selectedDay.placeIds : Array.from(getScheduledPlaceIds(list));
+  const scheduledPlaceIds = selectedDay
+    ? sortPlaceIdsByTime(selectedDay.placeIds, selectedDay.placeTimes)
+    : Array.from(getScheduledPlaceIds(list));
   const activityPlaces = scheduledPlaceIds
     .map((placeId) => list.places.find((place) => place.id === placeId))
     .filter((place): place is Place => Boolean(place));
@@ -4421,15 +4439,49 @@ function SidebarListItem({
               </div>
               <div className="sidebar-timeline__activities">
                 {activityPlaces.length > 0 ? (
-                  activityPlaces.map((place) => (
-                    <div key={place.id} className="sidebar-timeline__activity">
-                      <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span>
-                      <div>
-                        <strong>{place.name}</strong>
-                        <small>{place.address}</small>
-                      </div>
-                    </div>
-                  ))
+                  selectedDay ? (
+                    <ol className="sidebar-timeline__list">
+                      {activityPlaces.map((place, index) => {
+                        const timeLabel = formatTimeRange(selectedDay.placeTimes?.[place.id]);
+                        const markerColor = LIST_MARKER_COLORS[index % LIST_MARKER_COLORS.length];
+                        const nextPlace = index < activityPlaces.length - 1 ? activityPlaces[index + 1] : null;
+                        return (
+                          <li key={place.id} className="sidebar-timeline__row">
+                            <div className="sidebar-timeline__marker">
+                              <span className="sidebar-timeline__dot" style={{ background: markerColor }} aria-hidden="true">
+                                {CATEGORY_META[place.category].icon}
+                              </span>
+                              {nextPlace ? (
+                                <div className="sidebar-timeline__line-wrap">
+                                  <span className="sidebar-timeline__line" style={{ background: markerColor }} />
+                                  <SidebarTravelSegment origin={place} destination={nextPlace} />
+                                </div>
+                              ) : null}
+                            </div>
+                            <button type="button" className="sidebar-timeline__content" onClick={() => onFocusPlace(place.id)}>
+                              <strong>{place.name}</strong>
+                              {timeLabel ? <small>{timeLabel}</small> : null}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  ) : (
+                    activityPlaces.map((place) => (
+                      <button
+                        key={place.id}
+                        type="button"
+                        className="sidebar-timeline__activity"
+                        onClick={() => onFocusPlace(place.id)}
+                      >
+                        <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span>
+                        <div>
+                          <strong>{place.name}</strong>
+                          <small>{place.address}</small>
+                        </div>
+                      </button>
+                    ))
+                  )
                 ) : (
                   <p className="sidebar__empty">No stops planned for this day.</p>
                 )}
@@ -4439,6 +4491,28 @@ function SidebarListItem({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Driving distance between two consecutive sidebar-timeline stops, sat on the connecting line --
+ * a lighter-weight sibling of TimelineTravelTime (no mode switcher, distance instead of duration)
+ * sized for the sidebar's narrow marker column. Shares the same cached useTravelTime query, so a
+ * segment already fetched for the full Edit-list timeline costs nothing extra here. */
+function SidebarTravelSegment({ origin, destination }: { origin: Place; destination: Place }) {
+  const { result, isLoading, error } = useTravelTime({ lat: origin.lat, lng: origin.lng }, { lat: destination.lat, lng: destination.lng }, 'DRIVING');
+
+  if (isLoading) {
+    return <span className="sidebar-timeline__distance">…</span>;
+  }
+
+  if (error || !result) {
+    return null;
+  }
+
+  return (
+    <span className="sidebar-timeline__distance" title="Driving distance to the next stop">
+      🚗 {result.distanceText}
+    </span>
   );
 }
 

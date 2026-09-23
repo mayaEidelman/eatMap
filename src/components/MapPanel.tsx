@@ -35,6 +35,11 @@ type MapPanelProps = {
    * used to keep a trip day's own places easy to pick out while the rest of the list's places
    * stay visible on the map for context rather than being hidden outright. */
   dimmedPlaceIds?: Set<string>;
+  /** Id of a place to pan/zoom the map to and "click" open, paired with focusRequestToken so a
+   * repeat click on the same place (token bumped, id unchanged) still re-triggers it -- same
+   * counter-prop pattern as locateRequestToken below. */
+  focusPlaceId?: string | null;
+  focusRequestToken?: number;
   /** Bump this (e.g. a counter incremented on button click) to trigger a one-time "locate me" --
    * pans/zooms to the device's current position and drops a "you are here" marker. A counter prop
    * rather than an imperative ref method, to match how `previewPlace` etc. already drive this
@@ -191,12 +196,15 @@ export function MapPanel({
   selectedPlaceIds,
   onTogglePlaceSelect,
   dimmedPlaceIds,
+  focusPlaceId,
+  focusRequestToken,
   locateRequestToken,
   onLocationError,
 }: MapPanelProps) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstance = useRef<google.maps.Map | null>(null);
   const markers = useRef<google.maps.Marker[]>([]);
+  const markersByPlaceId = useRef<Map<string, google.maps.Marker>>(new Map());
   const previewMarker = useRef<google.maps.Marker | null>(null);
   const userLocationMarker = useRef<google.maps.Marker | null>(null);
   const userLocationAccuracy = useRef<google.maps.Circle | null>(null);
@@ -330,6 +338,7 @@ export function MapPanel({
 
     markers.current.forEach((marker) => marker.setMap(null));
     markers.current = [];
+    markersByPlaceId.current = new Map();
 
     lists.forEach((list) => {
       const active = list.id === selectedListId;
@@ -397,9 +406,34 @@ export function MapPanel({
         });
 
         markers.current.push(marker);
+        markersByPlaceId.current.set(placeItem.id, marker);
       });
     });
   }, [lists, selectedListId, onSelectList, ready, selectMode, selectedPlaceIds, onTogglePlaceSelect, dimmedPlaceIds]);
+
+  // Sidebar timeline entries are clickable -- this re-runs the same "open this marker" behavior
+  // the marker's own click listener above uses, so a sidebar click and a direct map tap on the
+  // pin land on identical behavior (select its list, pan in, open the info window).
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!ready || !map || !window.google || !focusPlaceId) {
+      return;
+    }
+
+    const marker = markersByPlaceId.current.get(focusPlaceId);
+    const position = marker?.getPosition();
+    if (!marker || !position) {
+      return;
+    }
+
+    map.panTo(position);
+    if ((map.getZoom() ?? 0) < 15) {
+      map.setZoom(15);
+    }
+    window.google.maps.event.trigger(marker, 'click');
+    // focusRequestToken isn't read here -- it only exists so a repeat click on the same place
+    // (id unchanged, token bumped) still re-triggers this effect.
+  }, [focusPlaceId, focusRequestToken, ready]);
 
   // Split out from marker rebuilding above so toggling a place's selection (which also rebuilds
   // markers, to recolor the clicked pin) never re-fits/re-zooms the viewport -- only an actual
