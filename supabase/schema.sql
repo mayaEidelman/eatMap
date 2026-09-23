@@ -1,4 +1,4 @@
--- EatMap schema + Row Level Security
+-- PlanEat schema + Row Level Security
 -- Run once in the Supabase Dashboard's SQL Editor (Project -> SQL Editor -> New query).
 -- Safe to re-run: every statement is guarded with "if not exists" / "or replace" / drop-then-create.
 

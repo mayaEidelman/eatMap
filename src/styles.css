@@ -95,6 +95,63 @@ button {
   background: linear-gradient(135deg, var(--accent-hot), var(--accent-sky));
 }
 
+.loading-brand {
+  width: min(280px, 60vw);
+}
+
+.loading-brand__svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.loading-brand__trail {
+  fill: none;
+  stroke: var(--accent-sky);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 1 7;
+  opacity: 0.7;
+}
+
+.loading-brand__word {
+  font-family: 'Manrope', sans-serif;
+  font-weight: 800;
+  font-size: 44px;
+  letter-spacing: -0.01em;
+}
+
+.loading-brand__word-plan {
+  fill: var(--ink);
+}
+
+.loading-brand__word-eat {
+  fill: var(--accent-hot);
+}
+
+.loading-brand__globe {
+  color: var(--muted);
+}
+
+.loading-brand__croissant {
+  color: var(--accent-hot);
+}
+
+.loading-brand__sparkle {
+  color: var(--accent-sky);
+}
+
+.loading-brand__plane path {
+  fill: var(--accent-teal);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-brand__trail {
+    opacity: 0.4;
+  }
+}
+
 .auth-screen__copy h1 {
   margin: 8px 0 0;
   font-size: clamp(2.2rem, 4vw, 4.2rem);
@@ -245,6 +302,28 @@ button {
   text-shadow: 0 2px 10px rgba(74, 74, 74, 0.25);
 }
 
+.topbar__brand-falling-a {
+  display: inline-block;
+  /* Overshoot easing (dips past its landing spot before settling back) reads as a little bounce
+     on arrival, rather than just sliding straight down -- matches "falling into place" better
+     than a plain ease-out would. */
+  animation: brand-a-fall 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes brand-a-fall {
+  0% {
+    transform: translateY(-28px);
+    opacity: 0;
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 .topbar__nav {
   display: inline-flex;
   gap: 8px;
@@ -295,6 +374,10 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .topbar__brand-falling-a {
+    animation: none;
+  }
+
   .page-transition {
     animation: none;
   }
@@ -488,6 +571,22 @@ button {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: none;
+  padding: 4px;
+  margin: 0 -4px;
+  border-radius: 10px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sidebar-timeline__activity:hover {
+  background: rgba(207, 127, 149, 0.08);
 }
 
 .sidebar-timeline__activity strong,
@@ -496,6 +595,116 @@ button {
 }
 
 .sidebar-timeline__activity small {
+  color: var(--muted);
+}
+
+.sidebar-timeline__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.sidebar-timeline__row {
+  display: grid;
+  gap: 2px;
+}
+
+/* Dot and name sit in one flex row so their vertical centers always line up with each other --
+   independent of either element's own font metrics/line-height, unlike lining up two separate
+   grid columns by trusting both happen to flow flush with the row's top edge. */
+.sidebar-timeline__stop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The extra `.sidebar-timeline__stop` qualifier isn't decorative -- `.account-list-sidebar__item
+   span { display: block }` above outweighs a single-class selector's specificity and was silently
+   overriding `display: flex` here, leaving align-items/justify-content set but inert (the element
+   was never actually a flex container). This is the actual reason the icon rendered pinned to the
+   top-left instead of centered -- not a font/engine quirk. */
+.sidebar-timeline__stop .sidebar-timeline__dot {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 2px 6px rgba(74, 74, 74, 0.18);
+}
+
+.sidebar-timeline__dot svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  stroke: white;
+}
+
+/* Same 26px width as the dot above it, so the line centers directly beneath the dot's center. */
+.sidebar-timeline__connector {
+  position: relative;
+  width: 26px;
+  min-height: 32px;
+  display: flex;
+  justify-content: center;
+}
+
+.sidebar-timeline__line {
+  width: 2px;
+  height: 100%;
+  border-radius: 999px;
+  opacity: 0.35;
+}
+
+.sidebar-timeline__distance {
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 7px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--muted);
+  box-shadow: 0 2px 6px rgba(74, 74, 74, 0.12);
+}
+
+.sidebar-timeline__content {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: none;
+  padding: 8px 0;
+  margin: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* (hover: hover) excludes touch devices, which fake :hover on tap and then leave it "stuck" on
+   whatever was last tapped since there's no real pointer to move away and clear it. */
+@media (hover: hover) {
+  .sidebar-timeline__content:hover strong {
+    color: var(--accent-hot);
+  }
+}
+
+.sidebar-timeline__content strong,
+.sidebar-timeline__content small {
+  display: block;
+}
+
+.sidebar-timeline__content small {
   color: var(--muted);
 }
 

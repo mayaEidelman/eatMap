@@ -1,6 +1,6 @@
-# EatMap
+# PlanEat
 
-EatMap is a map-first social trip planner, structured like Instagram: a Map home page, an Explore feed, DMs, and an Account page. Instead of photo posts, each "post" is a **trip list** — a named collection with a cover image and a set of real places pinned on Google Maps.
+PlanEat is a map-first social trip planner, structured like Instagram: a Map home page, an Explore feed, DMs, and an Account page. Instead of photo posts, each "post" is a **trip list** — a named collection with a cover image and a set of real places pinned on Google Maps.
 
 - **Map** — your own lists and the lists you've saved from other people, selectable in the sidebar and shown as pins on the map
 - **Explore** — trip lists from the whole community, with a Save (bookmark) button on anyone else's list

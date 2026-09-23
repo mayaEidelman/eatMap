@@ -1,16 +1,27 @@
 import { ChangeEvent, FormEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Bed,
+  Coffee,
   Compass,
+  Croissant,
   DollarSign,
+  Globe,
+  Leaf,
   LocateFixed,
   Map as MapIcon,
+  MapPin,
   MessageCircle,
+  Moon,
+  Pin,
   Plus,
   Route,
   Search,
+  ShoppingBag,
+  Sparkle,
   Trash2,
   User as UserIcon,
   UserPlus,
+  Utensils,
 } from 'lucide-react';
 import { ImportPlacesModal } from './components/ImportPlacesModal';
 import { MapPanel } from './components/MapPanel';
@@ -57,8 +68,25 @@ import type {
 
 const DEFAULT_COVER = 'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?q=80&w=1200&auto=format&fit=crop';
 
-const RECENTLY_WATCHED_KEY = 'eatmap:recently-watched-lists';
+const RECENTLY_WATCHED_KEY = 'planeat:recently-watched-lists';
 const RECENTLY_WATCHED_LIMIT = 3;
+
+/** Vector equivalents of CATEGORY_META's emoji, used only for the sidebar timeline's dot markers.
+ * Emoji glyphs sit inside font-defined boxes whose visual ink isn't necessarily centered within
+ * that box (varies by platform emoji font -- Apple/Noto/Segoe all differ), so no amount of flex
+ * centering fully centers them; an SVG icon has an exact, predictable box, so it centers reliably
+ * everywhere. Left as emoji everywhere else (map marker labels are plain text -- Google's Marker
+ * API doesn't accept JSX there -- and changing the look of every other emoji use wasn't asked for). */
+const CATEGORY_DOT_ICON: Record<PlaceCategory, typeof MapPin> = {
+  food: Utensils,
+  attraction: MapPin,
+  hotel: Bed,
+  cafe: Coffee,
+  shopping: ShoppingBag,
+  nature: Leaf,
+  nightlife: Moon,
+  other: Pin,
+};
 
 /** Places actually assigned to some day -- excludes places saved to the list but never dragged
  * into the trip plan, so "All days" in the timeline means "everything scheduled," not
@@ -436,6 +464,13 @@ function AppShell() {
   const [groupError, setGroupError] = useState<string | null>(null);
   const [locateRequestToken, setLocateRequestToken] = useState(0);
   const [locationError, setLocationError] = useState<string | null>(null);
+  // Clicking a place in the sidebar timeline pans/zooms the map to it and opens its info window --
+  // `token` bumps on every click (even re-clicking the same place) so the effect in MapPanel that
+  // watches it always re-fires, the same pattern locateRequestToken already uses.
+  const [focusPlaceRequest, setFocusPlaceRequest] = useState<{ placeId: string; token: number } | null>(null);
+  const focusPlaceOnMap = useCallback((placeId: string) => {
+    setFocusPlaceRequest((current) => ({ placeId, token: (current?.token ?? 0) + 1 }));
+  }, []);
   const mapSidebarRef = useRef<HTMLElement | null>(null);
   const sheetDrag = useRef<{ startY: number; startHeight: number } | null>(null);
   const [recentlyWatchedListIds, setRecentlyWatchedListIds] = useState<string[]>(() => {
@@ -718,8 +753,11 @@ function AppShell() {
     [accountLists, collaboratingLists, savedLists, recentlyWatchedLists],
   );
 
-  // When a list's sidebar timeline is open and a specific day is picked, the map should only
-  // show that day's places; closed (or open with no day picked, i.e. "all days") shows everything.
+  // When a list's sidebar timeline is open with no specific day picked ("all days"), the map
+  // shows everything scheduled into a day, not every saved place (some may never have been
+  // dragged into the plan). Picking a specific day no longer hides the rest of the list's
+  // places -- they stay visible but faded (see mapDimmedPlaceIds below) so the day's own
+  // places can be picked out without losing the rest of the trip for context.
   const mapDisplayLists = useMemo(() => {
     return myMapLists.map((list) => {
       if (!openTimelineListIds.has(list.id)) {
@@ -728,12 +766,39 @@ function AppShell() {
 
       const selectedDayId = selectedDayByListId[list.id];
       const day = selectedDayId ? list.days.find((tripDay) => tripDay.id === selectedDayId) : undefined;
-      // Timeline open with no specific day picked ("All days") -- show everything scheduled
-      // into a day, not every saved place (some may never have been dragged into the plan).
-      const visiblePlaceIds = day ? new Set(day.placeIds) : getScheduledPlaceIds(list);
+      if (day) {
+        return list;
+      }
 
+      const visiblePlaceIds = getScheduledPlaceIds(list);
       return { ...list, places: list.places.filter((place) => visiblePlaceIds.has(place.id)) };
     });
+  }, [myMapLists, openTimelineListIds, selectedDayByListId]);
+
+  // Places belonging to a list whose timeline is open on a specific day, but not scheduled into
+  // that day -- rendered faded/brighter on the map instead of hidden, so the selected day's
+  // places stand out while the rest of the trip stays visible for context.
+  const mapDimmedPlaceIds = useMemo(() => {
+    const dimmed = new Set<string>();
+    myMapLists.forEach((list) => {
+      if (!openTimelineListIds.has(list.id)) {
+        return;
+      }
+
+      const selectedDayId = selectedDayByListId[list.id];
+      const day = selectedDayId ? list.days.find((tripDay) => tripDay.id === selectedDayId) : undefined;
+      if (!day) {
+        return;
+      }
+
+      const dayPlaceIds = new Set(day.placeIds);
+      list.places.forEach((place) => {
+        if (!dayPlaceIds.has(place.id)) {
+          dimmed.add(place.id);
+        }
+      });
+    });
+    return dimmed;
   }, [myMapLists, openTimelineListIds, selectedDayByListId]);
 
   // Grouping only makes sense for a list actually shown on the map, with days to group into, and
@@ -925,7 +990,7 @@ function AppShell() {
     return (
       <div className="auth-screen">
         <section className="auth-screen__panel panel">
-          <div className="auth-screen__badge">EatMap</div>
+          <LoadingBrand />
           <p>Loading…</p>
         </section>
       </div>
@@ -961,7 +1026,7 @@ function AppShell() {
     return (
       <div className="auth-screen">
         <section className="auth-screen__panel panel">
-          <div className="auth-screen__badge">EatMap</div>
+          <div className="auth-screen__badge">PlanEat</div>
           <div className="auth-screen__copy">
             <p className="eyebrow">Trip planning social map</p>
             <h1>Sign in to continue.</h1>
@@ -1016,7 +1081,7 @@ function AppShell() {
     return (
       <div className="auth-screen">
         <section className="auth-screen__panel panel">
-          <div className="auth-screen__badge">EatMap</div>
+          <LoadingBrand />
           <p>{dataError ? 'Something went wrong loading your trips.' : 'Loading your trips…'}</p>
         </section>
       </div>
@@ -1534,7 +1599,9 @@ function AppShell() {
     <div className="app-shell">
       <header className="topbar">
         <div className="topbar__brand">
-          <strong>EatMap</strong>
+          <strong>
+            PlanE<span className="topbar__brand-falling-a">a</span>t
+          </strong>
         </div>
 
         <nav className="topbar__nav" aria-label="Main navigation">
@@ -1602,6 +1669,9 @@ function AppShell() {
             selectMode={placeSelectMode}
             selectedPlaceIds={selectedPlaceIds}
             onTogglePlaceSelect={togglePlaceSelection}
+            dimmedPlaceIds={mapDimmedPlaceIds}
+            focusPlaceId={focusPlaceRequest?.placeId ?? null}
+            focusRequestToken={focusPlaceRequest?.token ?? 0}
             locateRequestToken={locateRequestToken}
             onLocationError={setLocationError}
           />
@@ -1653,6 +1723,7 @@ function AppShell() {
                         onToggleTimeline={() => toggleListTimeline(list.id)}
                         selectedDayId={selectedDayByListId[list.id] ?? null}
                         onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                        onFocusPlace={focusPlaceOnMap}
                       />
                     ))
                   ) : (
@@ -1679,6 +1750,7 @@ function AppShell() {
                         onToggleTimeline={() => toggleListTimeline(list.id)}
                         selectedDayId={selectedDayByListId[list.id] ?? null}
                         onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                        onFocusPlace={focusPlaceOnMap}
                       />
                     ))}
                   </div>
@@ -1703,6 +1775,7 @@ function AppShell() {
                         onToggleTimeline={() => toggleListTimeline(list.id)}
                         selectedDayId={selectedDayByListId[list.id] ?? null}
                         onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                        onFocusPlace={focusPlaceOnMap}
                       />
                     ))
                   ) : (
@@ -1729,6 +1802,7 @@ function AppShell() {
                         onToggleTimeline={() => toggleListTimeline(list.id)}
                         selectedDayId={selectedDayByListId[list.id] ?? null}
                         onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                        onFocusPlace={focusPlaceOnMap}
                       />
                     ))}
                   </div>
@@ -4320,6 +4394,7 @@ function SidebarListItem({
   onToggleTimeline,
   selectedDayId,
   onSelectDay,
+  onFocusPlace,
 }: {
   list: TripList;
   active: boolean;
@@ -4330,9 +4405,13 @@ function SidebarListItem({
   /** null = "All days" -- every place in the list, not just one day's. */
   selectedDayId: string | null;
   onSelectDay: (dayId: string | null) => void;
+  /** Pans/zooms the map to a place and opens its info window. */
+  onFocusPlace: (placeId: string) => void;
 }) {
   const selectedDay = selectedDayId ? list.days.find((day) => day.id === selectedDayId) ?? null : null;
-  const scheduledPlaceIds = selectedDay ? selectedDay.placeIds : Array.from(getScheduledPlaceIds(list));
+  const scheduledPlaceIds = selectedDay
+    ? sortPlaceIdsByTime(selectedDay.placeIds, selectedDay.placeTimes)
+    : Array.from(getScheduledPlaceIds(list));
   const activityPlaces = scheduledPlaceIds
     .map((placeId) => list.places.find((place) => place.id === placeId))
     .filter((place): place is Place => Boolean(place));
@@ -4379,21 +4458,56 @@ function SidebarListItem({
                     className={`pill${selectedDay?.id === day.id ? ' pill--active' : ''}`}
                     onClick={() => onSelectDay(day.id)}
                   >
-                    {day.label}
+                    {formatDayOptionLabel(day)}
                   </button>
                 ))}
               </div>
               <div className="sidebar-timeline__activities">
                 {activityPlaces.length > 0 ? (
-                  activityPlaces.map((place) => (
-                    <div key={place.id} className="sidebar-timeline__activity">
-                      <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span>
-                      <div>
-                        <strong>{place.name}</strong>
-                        <small>{place.address}</small>
-                      </div>
-                    </div>
-                  ))
+                  selectedDay ? (
+                    <ol className="sidebar-timeline__list">
+                      {activityPlaces.map((place, index) => {
+                        const timeLabel = formatTimeRange(selectedDay.placeTimes?.[place.id]);
+                        const markerColor = LIST_MARKER_COLORS[index % LIST_MARKER_COLORS.length];
+                        const nextPlace = index < activityPlaces.length - 1 ? activityPlaces[index + 1] : null;
+                        const DotIcon = CATEGORY_DOT_ICON[place.category];
+                        return (
+                          <li key={place.id} className="sidebar-timeline__row">
+                            <div className="sidebar-timeline__stop">
+                              <span className="sidebar-timeline__dot" style={{ background: markerColor }} aria-hidden="true">
+                                <DotIcon size={13} strokeWidth={2.25} />
+                              </span>
+                              <button type="button" className="sidebar-timeline__content" onClick={() => onFocusPlace(place.id)}>
+                                <strong>{place.name}</strong>
+                                {timeLabel ? <small>{timeLabel}</small> : null}
+                              </button>
+                            </div>
+                            {nextPlace ? (
+                              <div className="sidebar-timeline__connector">
+                                <span className="sidebar-timeline__line" style={{ background: markerColor }} />
+                                <SidebarTravelSegment origin={place} destination={nextPlace} />
+                              </div>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  ) : (
+                    activityPlaces.map((place) => (
+                      <button
+                        key={place.id}
+                        type="button"
+                        className="sidebar-timeline__activity"
+                        onClick={() => onFocusPlace(place.id)}
+                      >
+                        <span aria-hidden="true">{CATEGORY_META[place.category].icon}</span>
+                        <div>
+                          <strong>{place.name}</strong>
+                          <small>{place.address}</small>
+                        </div>
+                      </button>
+                    ))
+                  )
                 ) : (
                   <p className="sidebar__empty">No stops planned for this day.</p>
                 )}
@@ -4403,6 +4517,28 @@ function SidebarListItem({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Driving distance between two consecutive sidebar-timeline stops, sat on the connecting line --
+ * a lighter-weight sibling of TimelineTravelTime (no mode switcher, distance instead of duration)
+ * sized for the sidebar's narrow marker column. Shares the same cached useTravelTime query, so a
+ * segment already fetched for the full Edit-list timeline costs nothing extra here. */
+function SidebarTravelSegment({ origin, destination }: { origin: Place; destination: Place }) {
+  const { result, isLoading, error } = useTravelTime({ lat: origin.lat, lng: origin.lng }, { lat: destination.lat, lng: destination.lng }, 'DRIVING');
+
+  if (isLoading) {
+    return <span className="sidebar-timeline__distance">…</span>;
+  }
+
+  if (error || !result) {
+    return null;
+  }
+
+  return (
+    <span className="sidebar-timeline__distance" title="Driving distance to the next stop">
+      {result.distanceText}
+    </span>
   );
 }
 
@@ -4546,6 +4682,51 @@ function Avatar({
   return (
     <div className={className} style={{ background: user?.accent ?? 'linear-gradient(135deg, #8c7c7c, #4a4a4a)' }}>
       {user?.avatar ?? '??'}
+    </div>
+  );
+}
+
+function LoadingBrand() {
+  // SMIL's <animateMotion> has no CSS-level reduced-motion hook of its own, so this is checked
+  // once on mount and used to skip the animation element entirely rather than let it run.
+  const prefersReducedMotion = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    [],
+  );
+
+  return (
+    <div className="loading-brand">
+      <svg className="loading-brand__svg" viewBox="0 0 300 150" role="img" aria-label="PlanEat">
+        <path
+          id="loading-trail-path"
+          className="loading-brand__trail"
+          d="M18 14 C 52 -2 74 34 56 54 C 38 74 70 86 96 64 C 118 46 132 70 152 86 C 176 104 197 94 206 74 C 213 60 227 57 236 67 C 244 76 238 87 227 86"
+        />
+        <text x="16" y="98" className="loading-brand__word">
+          <tspan className="loading-brand__word-plan">plan</tspan>
+          <tspan className="loading-brand__word-eat">Eat</tspan>
+        </text>
+        <g className="loading-brand__globe" transform="translate(22 100)">
+          <Globe width={18} height={18} strokeWidth={1.6} />
+        </g>
+        <g className="loading-brand__croissant" transform="translate(196 36)">
+          <Croissant width={32} height={32} strokeWidth={1.6} />
+        </g>
+        <g className="loading-brand__sparkle" transform="translate(264 116)">
+          <Sparkle width={14} height={14} strokeWidth={1.4} />
+        </g>
+        <g className="loading-brand__plane" transform={prefersReducedMotion ? 'translate(18 14) rotate(-25)' : undefined}>
+          <path
+            transform="scale(0.7) translate(-12 -12) rotate(42 12 12)"
+            d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"
+          />
+          {!prefersReducedMotion ? (
+            <animateMotion dur="3.2s" repeatCount="indefinite" rotate="auto">
+              <mpath href="#loading-trail-path" />
+            </animateMotion>
+          ) : null}
+        </g>
+      </svg>
     </div>
   );
 }
