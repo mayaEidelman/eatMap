@@ -95,6 +95,63 @@ button {
   background: linear-gradient(135deg, var(--accent-hot), var(--accent-sky));
 }
 
+.loading-brand {
+  width: min(280px, 60vw);
+}
+
+.loading-brand__svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.loading-brand__trail {
+  fill: none;
+  stroke: var(--accent-sky);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 1 7;
+  opacity: 0.7;
+}
+
+.loading-brand__word {
+  font-family: 'Manrope', sans-serif;
+  font-weight: 800;
+  font-size: 44px;
+  letter-spacing: -0.01em;
+}
+
+.loading-brand__word-plan {
+  fill: var(--ink);
+}
+
+.loading-brand__word-eat {
+  fill: var(--accent-hot);
+}
+
+.loading-brand__globe {
+  color: var(--muted);
+}
+
+.loading-brand__croissant {
+  color: var(--accent-hot);
+}
+
+.loading-brand__sparkle {
+  color: var(--accent-sky);
+}
+
+.loading-brand__plane path {
+  fill: var(--accent-teal);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-brand__trail {
+    opacity: 0.4;
+  }
+}
+
 .auth-screen__copy h1 {
   margin: 8px 0 0;
   font-size: clamp(2.2rem, 4vw, 4.2rem);

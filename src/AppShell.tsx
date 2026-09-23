@@ -1,13 +1,16 @@
 import { ChangeEvent, FormEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Compass,
+  Croissant,
   DollarSign,
+  Globe,
   LocateFixed,
   Map as MapIcon,
   MessageCircle,
   Plus,
   Route,
   Search,
+  Sparkle,
   Trash2,
   User as UserIcon,
   UserPlus,
@@ -925,7 +928,7 @@ function AppShell() {
     return (
       <div className="auth-screen">
         <section className="auth-screen__panel panel">
-          <div className="auth-screen__badge">PlanEat</div>
+          <LoadingBrand />
           <p>Loading…</p>
         </section>
       </div>
@@ -1016,7 +1019,7 @@ function AppShell() {
     return (
       <div className="auth-screen">
         <section className="auth-screen__panel panel">
-          <div className="auth-screen__badge">PlanEat</div>
+          <LoadingBrand />
           <p>{dataError ? 'Something went wrong loading your trips.' : 'Loading your trips…'}</p>
         </section>
       </div>
@@ -4548,6 +4551,51 @@ function Avatar({
   return (
     <div className={className} style={{ background: user?.accent ?? 'linear-gradient(135deg, #8c7c7c, #4a4a4a)' }}>
       {user?.avatar ?? '??'}
+    </div>
+  );
+}
+
+function LoadingBrand() {
+  // SMIL's <animateMotion> has no CSS-level reduced-motion hook of its own, so this is checked
+  // once on mount and used to skip the animation element entirely rather than let it run.
+  const prefersReducedMotion = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    [],
+  );
+
+  return (
+    <div className="loading-brand">
+      <svg className="loading-brand__svg" viewBox="0 0 300 150" role="img" aria-label="PlanEat">
+        <path
+          id="loading-trail-path"
+          className="loading-brand__trail"
+          d="M18 14 C 52 -2 74 34 56 54 C 38 74 70 86 96 64 C 118 46 132 70 152 86 C 176 104 197 94 206 74 C 213 60 227 57 236 67 C 244 76 238 87 227 86"
+        />
+        <text x="16" y="98" className="loading-brand__word">
+          <tspan className="loading-brand__word-plan">plan</tspan>
+          <tspan className="loading-brand__word-eat">Eat</tspan>
+        </text>
+        <g className="loading-brand__globe" transform="translate(22 100)">
+          <Globe width={18} height={18} strokeWidth={1.6} />
+        </g>
+        <g className="loading-brand__croissant" transform="translate(196 36)">
+          <Croissant width={32} height={32} strokeWidth={1.6} />
+        </g>
+        <g className="loading-brand__sparkle" transform="translate(264 116)">
+          <Sparkle width={14} height={14} strokeWidth={1.4} />
+        </g>
+        <g className="loading-brand__plane" transform={prefersReducedMotion ? 'translate(18 14) rotate(-25)' : undefined}>
+          <path
+            transform="scale(0.7) translate(-12 -12) rotate(42 12 12)"
+            d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"
+          />
+          {!prefersReducedMotion ? (
+            <animateMotion dur="3.2s" repeatCount="indefinite" rotate="auto">
+              <mpath href="#loading-trail-path" />
+            </animateMotion>
+          ) : null}
+        </g>
+      </svg>
     </div>
   );
 }
