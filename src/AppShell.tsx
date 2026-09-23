@@ -4415,7 +4415,7 @@ function SidebarListItem({
                     className={`pill${selectedDay?.id === day.id ? ' pill--active' : ''}`}
                     onClick={() => onSelectDay(day.id)}
                   >
-                    {day.label}
+                    {formatDayOptionLabel(day)}
                   </button>
                 ))}
               </div>
