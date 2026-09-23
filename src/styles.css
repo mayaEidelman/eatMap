@@ -621,15 +621,6 @@ button {
   min-height: 0;
 }
 
-.dm-chat__header {
-  display: grid;
-  gap: 2px;
-}
-
-.dm-chat__header span {
-  color: var(--muted);
-  font-size: 0.9rem;
-}
 
 .dm-chat__messages {
   display: grid;
@@ -1770,8 +1761,12 @@ button.stat-pill {
 }
 
 .dm-page {
+  /* Only one of .dm-page__list / .dm-page__chat is ever rendered at a time now (a standalone
+     inbox list vs. a single open conversation, switched via the back button) -- a single
+     minmax(0, 1fr) column rather than the old fixed-sidebar-plus-chat split, so whichever pane is
+     showing gets the full width instead of being squeezed into what used to be the list column. */
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   border-radius: 28px;
   padding: 20px;
@@ -1789,19 +1784,55 @@ button.stat-pill {
   grid-template-rows: auto 1fr auto;
   gap: 14px;
   min-height: 0;
-  border-left: 1px solid var(--border);
-  padding-left: 18px;
 }
 
-@media (max-width: 1240px) {
-  .dm-page {
-    grid-template-columns: 1fr;
-  }
+.dm-chat__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
-  .dm-page__chat {
-    border-left: 0;
-    padding-left: 0;
-  }
+.dm-chat__back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.dm-chat__back:hover {
+  color: var(--ink);
+}
+
+.dm-chat__header .dm-thread__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+}
+
+.dm-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--muted);
+}
+
+.dm-search input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
 }
 
 .nav-tab__badge {
