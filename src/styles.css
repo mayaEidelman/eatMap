@@ -2261,21 +2261,50 @@ button.stat-pill {
   padding-top: 4px;
 }
 
-.expense-form__participant {
+.expense-participants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.expense-participant-avatar {
+  padding: 3px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  opacity: 0.45;
+  transition: opacity 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.expense-participant-avatar .dm-thread__avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.expense-participant-avatar--selected {
+  opacity: 1;
+  border-color: var(--accent-hot);
+  transform: scale(1.05);
+}
+
+.expense-participants__amounts {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.expense-participants__amount-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  font-size: 0.85rem;
 }
 
-.expense-form__participant input[type='number'] {
+.expense-participants__amount-row input {
   max-width: 120px;
-}
-
-.expense-form__participant-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .expense-list {
