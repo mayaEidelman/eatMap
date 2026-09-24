@@ -1263,11 +1263,10 @@ function AppShell() {
     }
   }
 
-  /** Closing the modal (×, backdrop, or Done) after editing a note for an already-saved place is
-   * the natural way someone would expect an edit to "stick" -- relying on them to notice and
-   * separately press the Update note button is exactly the kind of thing that reads as "I changed
-   * it and it didn't save." This syncs first, silently, so closing the modal is itself enough. */
-  async function closeSaveToListModal() {
+  /** The modal's primary "Save" action -- syncs any note edit to every existing copy of this
+   * place (same as the standalone Update note button) and then closes. × and the backdrop click
+   * stay plain dismissal with no side effect, so there's exactly one button that commits changes. */
+  async function saveAndCloseSaveToListModal() {
     if (mapSearchPlaceSavedIds.length > 0) {
       await updateSavedPlaceNotes();
     }
@@ -2760,11 +2759,11 @@ function AppShell() {
       ) : null}
 
       {saveToListOpen && mapSearchPlace ? (
-        <div className="modal-backdrop" role="presentation" onClick={closeSaveToListModal}>
+        <div className="modal-backdrop" role="presentation" onClick={() => setSaveToListOpen(false)}>
           <div className="modal panel save-to-list-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="section-heading">
               <h3>Save to list</h3>
-              <button className="icon-button" type="button" onClick={closeSaveToListModal}>
+              <button className="icon-button" type="button" onClick={() => setSaveToListOpen(false)}>
                 ×
               </button>
             </div>
@@ -2822,8 +2821,8 @@ function AppShell() {
               >
                 + New list with this place
               </button>
-              <button type="button" className="primary-button" onClick={closeSaveToListModal} disabled={saveToListSubmitting}>
-                {saveToListSubmitting ? 'Saving…' : 'Done'}
+              <button type="button" className="primary-button" onClick={saveAndCloseSaveToListModal} disabled={saveToListSubmitting}>
+                {saveToListSubmitting ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>
