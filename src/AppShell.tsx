@@ -657,6 +657,22 @@ function AppShell() {
     });
   }, []);
 
+  /** Adds an already-saved place to a day without touching any *other* day it's already scheduled
+   * on -- used by the "+ Add from saved places" dropdown, where picking a place that's already on
+   * another day clearly means "also put it here," not "move it here" (drag-and-drop between day
+   * cards keeps that "move" meaning via movePlaceToDraftDay above; this is the deliberately
+   * additive counterpart). */
+  const addPlaceToDraftDay = useCallback((placeId: string, targetDayId: string) => {
+    setDraft((current) => ({
+      ...current,
+      days: current.days.map((tripDay) =>
+        tripDay.id === targetDayId && !tripDay.placeIds.includes(placeId)
+          ? { ...tripDay, placeIds: [...tripDay.placeIds, placeId] }
+          : tripDay,
+      ),
+    }));
+  }, []);
+
   /** Searching a place directly into a day (rather than via the top "Add a place" box) does both
    * halves at once: saves it to the list's places if it's genuinely new -- reusing the existing
    * entry instead of creating a duplicate if the same place was already saved -- and schedules
@@ -678,10 +694,24 @@ function AppShell() {
     });
   }, []);
 
+  /** Drops a place from every day -- used when dragging a place card back into the "Unscheduled
+   * places" bucket, which by design means "take this off the itinerary entirely," not just off
+   * whichever one day it was dragged from. */
   const unscheduleDraftPlace = useCallback((placeId: string) => {
     setDraft((current) => ({
       ...current,
       days: current.days.map((tripDay) => ({ ...tripDay, placeIds: tripDay.placeIds.filter((id) => id !== placeId) })),
+    }));
+  }, []);
+
+  /** Removes a place from one specific day only -- used by a day card's own "x" button, so
+   * removing a place from Day 1 doesn't also silently pull it off Day 3 if it's scheduled on both. */
+  const unscheduleDraftPlaceFromDay = useCallback((dayId: string, placeId: string) => {
+    setDraft((current) => ({
+      ...current,
+      days: current.days.map((tripDay) =>
+        tripDay.id === dayId ? { ...tripDay, placeIds: tripDay.placeIds.filter((id) => id !== placeId) } : tripDay,
+      ),
     }));
   }, []);
 
@@ -2434,7 +2464,7 @@ function AppShell() {
                                 <button
                                   type="button"
                                   className="trip-place-card__remove"
-                                  onClick={() => unscheduleDraftPlace(placeId)}
+                                  onClick={() => unscheduleDraftPlaceFromDay(tripDay.id, placeId)}
                                   aria-label={`Remove ${place.name} from ${tripDay.label}`}
                                 >
                                   ×
@@ -2473,17 +2503,23 @@ function AppShell() {
                         onChange={(event) => {
                           const placeId = event.target.value;
                           if (placeId) {
-                            movePlaceToDraftDay(placeId, tripDay.id);
+                            addPlaceToDraftDay(placeId, tripDay.id);
                           }
                         }}
                         aria-label={`Add a saved place to ${tripDay.label}`}
                       >
                         <option value="">+ Add from saved places</option>
                         {draft.places.map((place) => {
-                          const currentDay = draft.days.find((day) => day.placeIds.includes(place.id));
-                          const suffix = currentDay && currentDay.id !== tripDay.id ? ` (in ${currentDay.label})` : '';
+                          // A place can now be scheduled on more than one day -- list every day it's
+                          // already on (other than this one) rather than just the first match, so
+                          // picking it here reads as "also add to this day" rather than losing track
+                          // of where else it already sits.
+                          const otherDayLabels = draft.days
+                            .filter((day) => day.id !== tripDay.id && day.placeIds.includes(place.id))
+                            .map((day) => day.label);
+                          const suffix = otherDayLabels.length > 0 ? ` (also in ${otherDayLabels.join(', ')})` : '';
                           return (
-                            <option key={place.id} value={place.id}>
+                            <option key={place.id} value={place.id} disabled={tripDay.placeIds.includes(place.id)}>
                               {CATEGORY_META[place.category].icon} {place.name}
                               {suffix}
                             </option>
