@@ -729,6 +729,12 @@ function AppShell() {
     [data],
   );
 
+  // Lists the current user can add a searched-up place into -- their own plus anywhere they're an
+  // accepted collaborator. RLS already allows collaborator inserts into `places` (same
+  // is_accepted_list_collaborator check as everything else collaborator-gated); the "Save to list"
+  // picker just needs to actually offer those lists as options.
+  const saveablePlaceLists = useMemo(() => [...accountLists, ...collaboratingLists], [accountLists, collaboratingLists]);
+
   // Lists viewed via "Show on map" that the viewer neither owns, saved, nor collaborates on.
   // Filtered at render (rather than pruned from storage) so a list that later gets saved/joined
   // simply stops matching here, with no risk of appearing in more than one section at once.
@@ -844,8 +850,8 @@ function AppShell() {
     : [];
 
   const mapSearchPlaceSaved = useMemo(
-    () => (mapSearchPlace ? Boolean(findDuplicatePlace(accountLists.flatMap((list) => list.places), mapSearchPlace)) : false),
-    [accountLists, mapSearchPlace],
+    () => (mapSearchPlace ? Boolean(findDuplicatePlace(saveablePlaceLists.flatMap((list) => list.places), mapSearchPlace)) : false),
+    [saveablePlaceLists, mapSearchPlace],
   );
 
   const viewedProfile = data ? data.users.find((user) => user.id === viewedProfileId) ?? null : null;
@@ -2675,7 +2681,7 @@ function AppShell() {
               </button>
             </div>
             <div className="account-list-sidebar">
-              {accountLists.map((list) => {
+              {saveablePlaceLists.map((list) => {
                 const savedHere = Boolean(findDuplicatePlace(list.places, mapSearchPlace));
                 return (
                   <button
@@ -2694,7 +2700,7 @@ function AppShell() {
                   </button>
                 );
               })}
-              {accountLists.length === 0 ? <p className="sidebar__empty">You don't have any lists yet.</p> : null}
+              {saveablePlaceLists.length === 0 ? <p className="sidebar__empty">You don't have any lists yet.</p> : null}
             </div>
             {saveToListError ? <p className="place-autocomplete__error">{saveToListError}</p> : null}
             <div className="modal-actions">
