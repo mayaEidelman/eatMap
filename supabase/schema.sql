@@ -151,7 +151,7 @@ create index if not exists trip_days_list_id_idx on public.trip_days (list_id);
 
 create table if not exists public.trip_day_places (
   day_id uuid not null references public.trip_days (id) on delete cascade,
-  place_id uuid not null unique references public.places (id) on delete cascade,
+  place_id uuid not null references public.places (id) on delete cascade,
   sort_order int not null default 0,
   start_time time,
   end_time time,
@@ -161,6 +161,13 @@ create table if not exists public.trip_day_places (
 -- Safe to re-run against a database that already has this table from before these columns existed.
 alter table public.trip_day_places add column if not exists start_time time;
 alter table public.trip_day_places add column if not exists end_time time;
+
+-- Originally `place_id` was `unique` on its own, which capped a place at one day total (assigning
+-- it to a second day silently moved it instead of adding it there). The (day_id, place_id)
+-- primary key above already stops the same place being added to the *same* day twice, which is
+-- all the uniqueness that's actually wanted -- so the extra single-column constraint is dropped
+-- here for databases created before this changed.
+alter table public.trip_day_places drop constraint if exists trip_day_places_place_id_key;
 
 -- ============================================================================
 -- list_collaborators (invite other users to co-edit a list)

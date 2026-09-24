@@ -179,9 +179,14 @@ export async function createList(ownerId: string, draft: DraftList): Promise<str
  * change, which is what made marking a list feel slow. These do only the one write that's
  * actually needed; `removePlaceFromList` doesn't need to touch trip_day_places or
  * place_attachments at all, since both reference places with `on delete cascade`. */
+/** `place.id` is left out on purpose -- it's whatever id the search result/preview pin happened to
+ * be built with client-side, and the same DraftPlace object gets reused for every list the "Save
+ * to list" modal's buttons are clicked for. Reinserting with that same id a second time (for a
+ * second list) would collide with the row the first insert already created, since `places.id` is
+ * a single global primary key, not scoped per list. Leaving `id` out lets the column's own
+ * `gen_random_uuid()` default assign each list's copy its own row. */
 export async function addPlaceToList(listId: string, place: DraftPlace): Promise<void> {
   const { error } = await supabase.from('places').insert({
-    id: place.id,
     list_id: listId,
     name: place.name,
     address: place.address,
@@ -198,11 +203,13 @@ export async function removePlaceFromList(placeId: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Moves one or more places straight into a day -- used by the map's "select places, then group
- * into a day" flow, so grouping stops requiring a trip back to the Edit List page. `place_id` is
- * unique on trip_day_places, so upserting on it both re-homes a place already scheduled elsewhere
- * and schedules a previously-unscheduled one, in the same call. Only sort_order/day_id are in the
- * payload, so an existing place's start_time/end_time survive the move untouched. */
+/** Assigns one or more places to a day -- used by the map's "select places, then group into a
+ * day" flow, so grouping stops requiring a trip back to the Edit List page. Upserts on the
+ * (day_id, place_id) pair rather than place_id alone, so a place already scheduled on a *different*
+ * day is added to this one too instead of being moved -- a place can now sit on more than one day
+ * at once. The pair conflict target still means re-running this for a place already on *this* day
+ * is a harmless no-op rather than a duplicate row. Only sort_order/day_id are in the payload, so an
+ * existing place's start_time/end_time survive untouched. */
 export async function assignPlacesToDay(dayId: string, placeIds: string[]): Promise<void> {
   if (placeIds.length === 0) return;
 
@@ -218,7 +225,7 @@ export async function assignPlacesToDay(dayId: string, placeIds: string[]): Prom
 
   const { error } = await supabase.from('trip_day_places').upsert(
     placeIds.map((placeId, index) => ({ day_id: dayId, place_id: placeId, sort_order: startOrder + index })),
-    { onConflict: 'place_id' },
+    { onConflict: 'day_id,place_id' },
   );
   if (error) throw error;
 }
