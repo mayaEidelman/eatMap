@@ -7,6 +7,12 @@ import { fetchPlaceDetails } from '../lib/placeDetails';
 import type { PlaceSearchResult } from './PlaceAutocomplete';
 import type { TripList } from '../types';
 
+/** DOM id for whichever popup's bookmark/save button is currently rendered -- only one popup is
+ * ever open at a time (they all share the single `infoWindow` instance below), so every place
+ * that can open one (preview pin, native POI, an already-saved marker) reuses the same id rather
+ * than needing its own. */
+const SAVE_BUTTON_ID = 'map-popup-save-btn';
+
 type MapPanelProps = {
   lists: TripList[];
   selectedListId: string;
@@ -387,9 +393,40 @@ export function MapPanel({
 
           onSelectList(list.id);
 
+          // A saved marker's popup gets the same bookmark button as a freshly-searched/POI preview
+          // pin, wired to open the same "Save to list" picker (pre-filled as already-saved, notes
+          // editable there) -- previously this popup had no save button at all, so it looked and
+          // behaved differently from every other pin on the map for no real reason.
+          const openInSaveToListModal = () => {
+            onDiscoverPlaceRef.current?.({
+              id: placeItem.id,
+              name: placeItem.name,
+              address: placeItem.address,
+              lat: placeItem.lat,
+              lng: placeItem.lng,
+              category: placeItem.category,
+              googlePlaceId: placeItem.googlePlaceId,
+              notes: placeItem.notes,
+            });
+            onSavePreviewPlaceRef.current?.();
+          };
+
+          const attachSaveButtonListener = () => {
+            if (!infoWindow.current) return;
+            window.google.maps.event.clearListeners(infoWindow.current, 'domready');
+            infoWindow.current.addListener('domready', () => {
+              document.getElementById(SAVE_BUTTON_ID)?.addEventListener('click', openInSaveToListModal);
+            });
+          };
+
           infoWindow.current?.setContent(
-            buildPlaceCardHtml({ name: placeItem.name, address: placeItem.address, notes: placeItem.notes }),
+            buildPlaceCardHtml(
+              { name: placeItem.name, address: placeItem.address, notes: placeItem.notes },
+              SAVE_BUTTON_ID,
+              true,
+            ),
           );
+          attachSaveButtonListener();
           infoWindow.current?.open({ map, anchor: marker });
 
           const requestId = ++openRequestId.current;
@@ -401,13 +438,18 @@ export function MapPanel({
               }
 
               infoWindow.current?.setContent(
-                buildPlaceCardHtml({
-                  name: placeItem.name,
-                  address: placeItem.address,
-                  notes: placeItem.notes,
-                  ...details,
-                }),
+                buildPlaceCardHtml(
+                  {
+                    name: placeItem.name,
+                    address: placeItem.address,
+                    notes: placeItem.notes,
+                    ...details,
+                  },
+                  SAVE_BUTTON_ID,
+                  true,
+                ),
               );
+              attachSaveButtonListener();
             });
           }
         });
@@ -522,6 +564,7 @@ export function MapPanel({
         {
           name: previewPlace.name,
           address: previewPlace.address,
+          notes: previewPlace.notes,
           rating: previewPlace.rating,
           userRatingsTotal: previewPlace.userRatingsTotal,
           priceLevel: previewPlace.priceLevel,
@@ -531,7 +574,7 @@ export function MapPanel({
           website: previewPlace.website,
           phone: previewPlace.phone,
         },
-        'map-popup-save-btn',
+        SAVE_BUTTON_ID,
         previewPlaceSaved,
       ),
     );
@@ -540,7 +583,7 @@ export function MapPanel({
     if (infoWindow.current) {
       window.google.maps.event.clearListeners(infoWindow.current, 'domready');
       infoWindow.current.addListener('domready', () => {
-        document.getElementById('map-popup-save-btn')?.addEventListener('click', () => {
+        document.getElementById(SAVE_BUTTON_ID)?.addEventListener('click', () => {
           onSavePreviewPlaceRef.current?.();
         });
       });
