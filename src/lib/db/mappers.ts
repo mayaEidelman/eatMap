@@ -56,6 +56,7 @@ export type PlaceRow = {
   google_place_id: string | null;
   check_in: string | null;
   check_out: string | null;
+  notes: string;
 };
 
 export type TripDayRow = {
@@ -153,6 +154,7 @@ export function mapPlaceRow(row: PlaceRow): Place {
     googlePlaceId: row.google_place_id ?? undefined,
     checkIn: row.check_in ?? undefined,
     checkOut: row.check_out ?? undefined,
+    notes: row.notes || undefined,
   };
 }
 

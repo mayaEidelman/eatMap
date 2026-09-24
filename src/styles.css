@@ -1368,6 +1368,19 @@ button.stat-pill {
   margin: -4px -4px 4px;
 }
 
+.place-preview-modal__notes {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(207, 127, 149, 0.08);
+  font-size: 0.86rem;
+}
+
+.place-preview-modal__notes strong {
+  margin-right: 4px;
+  color: #9c4f66;
+}
+
 .place-dot {
   width: 10px;
   height: 10px;
@@ -1418,6 +1431,35 @@ button.stat-pill {
 
 .save-to-list-modal {
   width: min(420px, 100%);
+}
+
+.save-to-list-modal__place {
+  margin: -4px 0 0;
+  font-weight: 700;
+}
+
+.save-to-list-modal__notes-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.save-to-list-modal__notes-label span {
+  font-weight: 500;
+  text-transform: none;
+}
+
+.save-to-list-modal__notes {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: white;
+  font-size: 0.86rem;
+  font-family: inherit;
+  resize: vertical;
 }
 
 .form-grid {
@@ -1531,6 +1573,11 @@ button.stat-pill {
 .map-popup p {
   margin: 4px 0 0;
   color: var(--muted);
+}
+
+.map-popup .map-popup__notes {
+  color: #9c4f66;
+  font-style: italic;
 }
 
 .map-popup--preview {
@@ -1967,6 +2014,12 @@ button.stat-pill {
 
 .place-list__item small {
   color: var(--muted);
+}
+
+.place-list__item .place-list__notes {
+  margin-top: 2px;
+  color: #9c4f66;
+  font-style: italic;
 }
 
 .dm-page {

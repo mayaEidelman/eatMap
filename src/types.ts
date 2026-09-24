@@ -30,6 +30,10 @@ export type Place = {
    * accommodation covers, so the timeline can show it on the right days. */
   checkIn?: string;
   checkOut?: string;
+  /** A short free-text note about why this place was saved -- set from the "Save to list" picker.
+   * Distinct from PlaceAttachment.note, which is private/owner-only; this one is visible to
+   * anyone who can see the place (owner + accepted collaborators). */
+  notes?: string;
 };
 
 export type PlaceTimeRange = {

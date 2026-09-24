@@ -455,6 +455,11 @@ function AppShell() {
   const [saveToListOpen, setSaveToListOpen] = useState(false);
   const [saveToListError, setSaveToListError] = useState<string | null>(null);
   const [saveToListSubmitting, setSaveToListSubmitting] = useState(false);
+  // Kept separate from mapSearchPlace (rather than merged into it on every keystroke) because
+  // MapPanel's preview-marker effect depends on that whole object by reference -- giving it a new
+  // reference on every letter typed re-ran that effect, which re-opens the Google InfoWindow and
+  // steals focus straight out of this textarea. Plain local state has no such side effect.
+  const [saveToListNotes, setSaveToListNotes] = useState('');
   const [inspectedPlaceId, setInspectedPlaceId] = useState<string | null>(null);
   const [openTimelineListIds, setOpenTimelineListIds] = useState<Set<string>>(new Set());
   const [selectedDayByListId, setSelectedDayByListId] = useState<Record<string, string | null>>({});
@@ -1196,12 +1201,14 @@ function AppShell() {
     setMapSearchPlace(place);
     setSaveToListOpen(false);
     setSaveToListError(null);
+    setSaveToListNotes('');
   }
 
   function discardMapSearchPlace() {
     setMapSearchPlace(null);
     setSaveToListOpen(false);
     setSaveToListError(null);
+    setSaveToListNotes('');
   }
 
   async function togglePlaceInList(list: TripList) {
@@ -1214,7 +1221,7 @@ function AppShell() {
     setSaveToListSubmitting(true);
     setSaveToListError(null);
     try {
-      await actions.togglePlaceInList(list.id, mapSearchPlace, existing?.id);
+      await actions.togglePlaceInList(list.id, { ...mapSearchPlace, notes: saveToListNotes }, existing?.id);
     } catch (error) {
       console.error('togglePlaceInList failed:', error);
       setSaveToListError(describeQueryError(error));
@@ -1229,10 +1236,11 @@ function AppShell() {
     }
 
     setListFormMode('create');
-    setDraft({ ...emptyDraft, places: [mapSearchPlace], color: defaultColorForIndex(accountLists.length) });
+    setDraft({ ...emptyDraft, places: [{ ...mapSearchPlace, notes: saveToListNotes }], color: defaultColorForIndex(accountLists.length) });
     setListFormError(null);
     setMapSearchPlace(null);
     setSaveToListOpen(false);
+    setSaveToListNotes('');
     setComposerOpen(true);
   }
 
@@ -2716,6 +2724,18 @@ function AppShell() {
                 ×
               </button>
             </div>
+            <p className="save-to-list-modal__place">{mapSearchPlace.name}</p>
+            <label className="save-to-list-modal__notes-label" htmlFor="save-to-list-notes">
+              Notes <span>(optional)</span>
+            </label>
+            <textarea
+              id="save-to-list-notes"
+              className="save-to-list-modal__notes"
+              placeholder="Why you're saving this -- book ahead, a friend's rec, etc."
+              rows={2}
+              value={saveToListNotes}
+              onChange={(event) => setSaveToListNotes(event.target.value)}
+            />
             <div className="account-list-sidebar">
               {saveablePlaceLists.map((list) => {
                 const savedHere = Boolean(findDuplicatePlace(list.places, mapSearchPlace));
@@ -4266,6 +4286,12 @@ function PlacePreviewModal({ place, onClose }: { place: Place; onClose: () => vo
 
         <p className="detail-panel__description">{place.address}</p>
 
+        {place.notes ? (
+          <p className="place-preview-modal__notes">
+            <strong>Note</strong> {place.notes}
+          </p>
+        ) : null}
+
         {details?.openNow !== undefined ? (
           <span className={`map-popup__open-badge ${details.openNow ? 'map-popup__open-badge--open' : 'map-popup__open-badge--closed'}`}>
             {details.openNow ? 'Open now' : 'Closed now'}
@@ -4339,6 +4365,7 @@ function SavedPlacesView({ places, onSelectPlace }: { places: Place[]; onSelectP
                     <div>
                       <strong>{place.name}</strong>
                       <small>{place.address}</small>
+                      {place.notes ? <small className="place-list__notes">📝 {place.notes}</small> : null}
                     </div>
                   </button>
                 ))
