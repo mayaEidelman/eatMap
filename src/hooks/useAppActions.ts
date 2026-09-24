@@ -9,6 +9,7 @@ import {
   removePlaceFromList,
   respondToListInvite as respondToListInviteApi,
   updateList,
+  updatePlaceNotes as updatePlaceNotesApi,
 } from '../lib/api/lists';
 import { rateList as rateListApi } from '../lib/api/ratings';
 import { followUser, likeList, saveList as saveListApi, unfollowUser, unlikeList, unsaveList } from '../lib/api/social';
@@ -115,6 +116,11 @@ export function useAppActions(currentUserId: string | null) {
     await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.lists });
   }
 
+  async function updatePlaceNotes(placeIds: string[], notes: string) {
+    await updatePlaceNotesApi(placeIds, notes);
+    await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.lists });
+  }
+
   return {
     toggleFollow,
     toggleSaveList,
@@ -128,5 +134,6 @@ export function useAppActions(currentUserId: string | null) {
     respondToListInvite,
     removeListCollaborator,
     assignPlacesToDay,
+    updatePlaceNotes,
   };
 }

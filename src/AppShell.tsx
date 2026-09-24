@@ -884,10 +884,19 @@ function AppShell() {
       )
     : [];
 
-  const mapSearchPlaceSaved = useMemo(
-    () => (mapSearchPlace ? Boolean(findDuplicatePlace(saveablePlaceLists.flatMap((list) => list.places), mapSearchPlace)) : false),
-    [saveablePlaceLists, mapSearchPlace],
-  );
+  // Every existing `places` row across the user's lists that's the same real-world place as
+  // mapSearchPlace -- a place saved to more than one list is a separate row per list (see
+  // addPlaceToList), so "update the note" has to touch every id here, not just one, or the edit
+  // only sticks in whichever list happened to be clicked.
+  const mapSearchPlaceSavedIds = useMemo(() => {
+    if (!mapSearchPlace) return [];
+    return saveablePlaceLists.flatMap((list) => {
+      const match = findDuplicatePlace(list.places, mapSearchPlace);
+      return match ? [match.id] : [];
+    });
+  }, [saveablePlaceLists, mapSearchPlace]);
+
+  const mapSearchPlaceSaved = mapSearchPlaceSavedIds.length > 0;
 
   const viewedProfile = data ? data.users.find((user) => user.id === viewedProfileId) ?? null : null;
   const viewedProfileStats = data && viewedProfile ? getUserStats(viewedProfile.id, data) : null;
@@ -1201,7 +1210,11 @@ function AppShell() {
     setMapSearchPlace(place);
     setSaveToListOpen(false);
     setSaveToListError(null);
-    setSaveToListNotes('');
+    // If this place is already saved somewhere, prefill with its existing note instead of
+    // starting blank -- otherwise reopening "Save to list" for an already-noted place looks like
+    // the note got lost, when really there was just never a way to see/edit it again.
+    const alreadySaved = findDuplicatePlace(saveablePlaceLists.flatMap((list) => list.places), place);
+    setSaveToListNotes(alreadySaved?.notes ?? '');
   }
 
   function discardMapSearchPlace() {
@@ -1228,6 +1241,37 @@ function AppShell() {
     } finally {
       setSaveToListSubmitting(false);
     }
+  }
+
+  /** Updates the note on every existing copy of this place at once (every list it's already saved
+   * to), rather than the per-list Save buttons above which only add/remove -- editing the note and
+   * clicking an already-saved list button there would just unsave it, not update the text. */
+  async function updateSavedPlaceNotes() {
+    if (mapSearchPlaceSavedIds.length === 0) {
+      return;
+    }
+
+    setSaveToListSubmitting(true);
+    setSaveToListError(null);
+    try {
+      await actions.updatePlaceNotes(mapSearchPlaceSavedIds, saveToListNotes);
+    } catch (error) {
+      console.error('updatePlaceNotes failed:', error);
+      setSaveToListError(describeQueryError(error));
+    } finally {
+      setSaveToListSubmitting(false);
+    }
+  }
+
+  /** Closing the modal (×, backdrop, or Done) after editing a note for an already-saved place is
+   * the natural way someone would expect an edit to "stick" -- relying on them to notice and
+   * separately press the Update note button is exactly the kind of thing that reads as "I changed
+   * it and it didn't save." This syncs first, silently, so closing the modal is itself enough. */
+  async function closeSaveToListModal() {
+    if (mapSearchPlaceSavedIds.length > 0) {
+      await updateSavedPlaceNotes();
+    }
+    setSaveToListOpen(false);
   }
 
   function startNewListWithMapPlace() {
@@ -2716,11 +2760,11 @@ function AppShell() {
       ) : null}
 
       {saveToListOpen && mapSearchPlace ? (
-        <div className="modal-backdrop" role="presentation" onClick={() => setSaveToListOpen(false)}>
+        <div className="modal-backdrop" role="presentation" onClick={closeSaveToListModal}>
           <div className="modal panel save-to-list-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="section-heading">
               <h3>Save to list</h3>
-              <button className="icon-button" type="button" onClick={() => setSaveToListOpen(false)}>
+              <button className="icon-button" type="button" onClick={closeSaveToListModal}>
                 ×
               </button>
             </div>
@@ -2736,6 +2780,16 @@ function AppShell() {
               value={saveToListNotes}
               onChange={(event) => setSaveToListNotes(event.target.value)}
             />
+            {mapSearchPlaceSaved ? (
+              <button
+                type="button"
+                className="secondary-button save-to-list-modal__update-notes"
+                onClick={updateSavedPlaceNotes}
+                disabled={saveToListSubmitting}
+              >
+                Update note{mapSearchPlaceSavedIds.length > 1 ? ` (${mapSearchPlaceSavedIds.length} lists)` : ''}
+              </button>
+            ) : null}
             <div className="account-list-sidebar">
               {saveablePlaceLists.map((list) => {
                 const savedHere = Boolean(findDuplicatePlace(list.places, mapSearchPlace));
@@ -2768,8 +2822,8 @@ function AppShell() {
               >
                 + New list with this place
               </button>
-              <button type="button" className="primary-button" onClick={() => setSaveToListOpen(false)}>
-                Done
+              <button type="button" className="primary-button" onClick={closeSaveToListModal} disabled={saveToListSubmitting}>
+                {saveToListSubmitting ? 'Saving…' : 'Done'}
               </button>
             </div>
           </div>

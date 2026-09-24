@@ -205,6 +205,17 @@ export async function removePlaceFromList(placeId: string): Promise<void> {
   if (error) throw error;
 }
 
+/** A place saved to more than one list is a separate `places` row per list (see addPlaceToList
+ * above), each with its own independent `notes` -- editing the note in the "Save to list" picker
+ * only updates whichever single row you happened to click, not the place's other copies. This
+ * updates every copy at once, keyed by id, so an edited note actually shows up consistently
+ * everywhere that place is saved instead of only wherever it happened to get touched last. */
+export async function updatePlaceNotes(placeIds: string[], notes: string): Promise<void> {
+  if (placeIds.length === 0) return;
+  const { error } = await supabase.from('places').update({ notes }).in('id', placeIds);
+  if (error) throw error;
+}
+
 /** Assigns one or more places to a day -- used by the map's "select places, then group into a
  * day" flow, so grouping stops requiring a trip back to the Edit List page. Upserts on the
  * (day_id, place_id) pair rather than place_id alone, so a place already scheduled on a *different*
