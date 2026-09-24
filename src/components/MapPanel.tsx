@@ -95,6 +95,7 @@ function starString(rating: number): string {
 type PlaceCardDetails = {
   name: string;
   address: string;
+  notes?: string;
   rating?: number;
   userRatingsTotal?: number;
   priceLevel?: number;
@@ -122,6 +123,8 @@ function buildPlaceCardHtml(details: PlaceCardDetails, saveButtonId?: string, sa
         ${details.priceLevel ? `<span>· ${'$'.repeat(details.priceLevel)}</span>` : ''}
       </div>`
     : '';
+
+  const notesHtml = details.notes ? `<p class="map-popup__notes">📝 ${escapeHtml(details.notes)}</p>` : '';
 
   const openNowHtml =
     details.openNow === undefined
@@ -177,6 +180,7 @@ function buildPlaceCardHtml(details: PlaceCardDetails, saveButtonId?: string, sa
       </div>
       ${ratingHtml}
       <p>${escapeHtml(details.address)}</p>
+      ${notesHtml}
       ${openNowHtml}
       ${linksHtml}
     </div>
@@ -383,7 +387,9 @@ export function MapPanel({
 
           onSelectList(list.id);
 
-          infoWindow.current?.setContent(buildPlaceCardHtml({ name: placeItem.name, address: placeItem.address }));
+          infoWindow.current?.setContent(
+            buildPlaceCardHtml({ name: placeItem.name, address: placeItem.address, notes: placeItem.notes }),
+          );
           infoWindow.current?.open({ map, anchor: marker });
 
           const requestId = ++openRequestId.current;
@@ -398,6 +404,7 @@ export function MapPanel({
                 buildPlaceCardHtml({
                   name: placeItem.name,
                   address: placeItem.address,
+                  notes: placeItem.notes,
                   ...details,
                 }),
               );

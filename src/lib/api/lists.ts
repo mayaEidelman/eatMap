@@ -90,6 +90,7 @@ async function savePlacesAndDays(listId: string, places: DraftPlace[], days: Dra
         google_place_id: place.googlePlaceId ?? null,
         check_in: place.checkIn || null,
         check_out: place.checkOut || null,
+        notes: place.notes || '',
       })),
     );
     if (error) throw error;
@@ -194,6 +195,7 @@ export async function addPlaceToList(listId: string, place: DraftPlace): Promise
     lng: place.lng,
     category: place.category,
     google_place_id: place.googlePlaceId ?? null,
+    notes: place.notes || '',
   });
   if (error) throw error;
 }

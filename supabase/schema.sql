@@ -119,13 +119,19 @@ create table if not exists public.places (
   -- so the timeline can show "staying at X" on the right days and compute the distance from the
   -- hotel to that day's first stop.
   check_in date,
-  check_out date
+  check_out date,
+  -- A short free-text note about *why* this place was saved (e.g. "book ahead", "friend's rec") --
+  -- separate from place_attachments.note, which is private/owner-only and meant for booking
+  -- confirmations; this one is a normal place field, visible to the same people who can see the
+  -- place itself (owner + accepted collaborators), set right from the "Save to list" picker.
+  notes text not null default ''
 );
 
 -- Safe to re-run against a database that already has this table from before these columns existed.
 alter table public.places add column if not exists google_place_id text;
 alter table public.places add column if not exists check_in date;
 alter table public.places add column if not exists check_out date;
+alter table public.places add column if not exists notes text not null default '';
 
 create index if not exists places_list_id_idx on public.places (list_id);
 
