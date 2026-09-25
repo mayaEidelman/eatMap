@@ -1775,126 +1775,128 @@ function AppShell() {
                 <span className="map-sidebar__drag-handle-bar" aria-hidden="true" />
               </div>
 
-              <div className="map-sidebar__header">
-                <h3>Lists</h3>
-                <button className="icon-button" type="button" onClick={() => setSidebarOpen(false)} aria-label="Hide sidebar">
-                  ‹
-                </button>
-              </div>
-
-              <div className="sidebar__section map-quick-add">
-                <div className="section-heading">
-                  <h3>Add a place</h3>
+              <div className="map-sidebar__scroll">
+                <div className="map-sidebar__header">
+                  <h3>Lists</h3>
+                  <button className="icon-button" type="button" onClick={() => setSidebarOpen(false)} aria-label="Hide sidebar">
+                    ‹
+                  </button>
                 </div>
-                <PlaceAutocomplete onAdd={handleMapPlaceFound} />
-                <small className="draft-places__empty">
-                  {mapSearchPlace ? 'See details and Save on the pin below.' : 'Search to drop a pin on the map.'}
-                </small>
-              </div>
 
-              <div className="sidebar__section">
-                <div className="section-heading">
-                  <h3>My lists</h3>
-                  <span>{accountLists.length}</span>
+                <div className="sidebar__section map-quick-add">
+                  <div className="section-heading">
+                    <h3>Add a place</h3>
+                  </div>
+                  <PlaceAutocomplete onAdd={handleMapPlaceFound} />
+                  <small className="draft-places__empty">
+                    {mapSearchPlace ? 'See details and Save on the pin below.' : 'Search to drop a pin on the map.'}
+                  </small>
                 </div>
-                <div className="account-list-sidebar">
-                  {accountLists.length ? (
-                    accountLists.map((list) => (
-                      <SidebarListItem
-                        key={list.id}
-                        list={list}
-                        active={list.id === selectedListId}
-                        onSelect={() => setSelectedListId(list.id)}
-                        onView={() => openListDetail(list.id)}
-                        timelineOpen={openTimelineListIds.has(list.id)}
-                        onToggleTimeline={() => toggleListTimeline(list.id)}
-                        selectedDayId={selectedDayByListId[list.id] ?? null}
-                        onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
-                        onFocusPlace={focusPlaceOnMap}
-                      />
-                    ))
-                  ) : (
-                    <p className="sidebar__empty">You haven't created a list yet.</p>
-                  )}
-                </div>
-              </div>
 
-              {collaboratingLists.length > 0 ? (
                 <div className="sidebar__section">
                   <div className="section-heading">
-                    <h3>Collaborating</h3>
-                    <span>{collaboratingLists.length}</span>
+                    <h3>My lists</h3>
+                    <span>{accountLists.length}</span>
                   </div>
                   <div className="account-list-sidebar">
-                    {collaboratingLists.map((list) => (
-                      <SidebarListItem
-                        key={list.id}
-                        list={list}
-                        active={list.id === selectedListId}
-                        onSelect={() => setSelectedListId(list.id)}
-                        onView={() => openListDetail(list.id)}
-                        timelineOpen={openTimelineListIds.has(list.id)}
-                        onToggleTimeline={() => toggleListTimeline(list.id)}
-                        selectedDayId={selectedDayByListId[list.id] ?? null}
-                        onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
-                        onFocusPlace={focusPlaceOnMap}
-                      />
-                    ))}
+                    {accountLists.length ? (
+                      accountLists.map((list) => (
+                        <SidebarListItem
+                          key={list.id}
+                          list={list}
+                          active={list.id === selectedListId}
+                          onSelect={() => setSelectedListId(list.id)}
+                          onView={() => openListDetail(list.id)}
+                          timelineOpen={openTimelineListIds.has(list.id)}
+                          onToggleTimeline={() => toggleListTimeline(list.id)}
+                          selectedDayId={selectedDayByListId[list.id] ?? null}
+                          onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                          onFocusPlace={focusPlaceOnMap}
+                        />
+                      ))
+                    ) : (
+                      <p className="sidebar__empty">You haven't created a list yet.</p>
+                    )}
                   </div>
                 </div>
-              ) : null}
 
-              <div className="sidebar__section">
-                <div className="section-heading">
-                  <h3>Saved lists</h3>
-                  <span>{savedLists.length}</span>
-                </div>
-                <div className="account-list-sidebar">
-                  {savedLists.length ? (
-                    savedLists.map((list) => (
-                      <SidebarListItem
-                        key={list.id}
-                        list={list}
-                        active={list.id === selectedListId}
-                        onSelect={() => setSelectedListId(list.id)}
-                        onView={() => openListDetail(list.id)}
-                        timelineOpen={openTimelineListIds.has(list.id)}
-                        onToggleTimeline={() => toggleListTimeline(list.id)}
-                        selectedDayId={selectedDayByListId[list.id] ?? null}
-                        onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
-                        onFocusPlace={focusPlaceOnMap}
-                      />
-                    ))
-                  ) : (
-                    <p className="sidebar__empty">Save a list from Explore to pin it here.</p>
-                  )}
-                </div>
-              </div>
+                {collaboratingLists.length > 0 ? (
+                  <div className="sidebar__section">
+                    <div className="section-heading">
+                      <h3>Collaborating</h3>
+                      <span>{collaboratingLists.length}</span>
+                    </div>
+                    <div className="account-list-sidebar">
+                      {collaboratingLists.map((list) => (
+                        <SidebarListItem
+                          key={list.id}
+                          list={list}
+                          active={list.id === selectedListId}
+                          onSelect={() => setSelectedListId(list.id)}
+                          onView={() => openListDetail(list.id)}
+                          timelineOpen={openTimelineListIds.has(list.id)}
+                          onToggleTimeline={() => toggleListTimeline(list.id)}
+                          selectedDayId={selectedDayByListId[list.id] ?? null}
+                          onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                          onFocusPlace={focusPlaceOnMap}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
 
-              {recentlyWatchedLists.length > 0 ? (
                 <div className="sidebar__section">
                   <div className="section-heading">
-                    <h3>Recently watched</h3>
-                    <span>{recentlyWatchedLists.length}</span>
+                    <h3>Saved lists</h3>
+                    <span>{savedLists.length}</span>
                   </div>
                   <div className="account-list-sidebar">
-                    {recentlyWatchedLists.map((list) => (
-                      <SidebarListItem
-                        key={list.id}
-                        list={list}
-                        active={list.id === selectedListId}
-                        onSelect={() => setSelectedListId(list.id)}
-                        onView={() => openListDetail(list.id)}
-                        timelineOpen={openTimelineListIds.has(list.id)}
-                        onToggleTimeline={() => toggleListTimeline(list.id)}
-                        selectedDayId={selectedDayByListId[list.id] ?? null}
-                        onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
-                        onFocusPlace={focusPlaceOnMap}
-                      />
-                    ))}
+                    {savedLists.length ? (
+                      savedLists.map((list) => (
+                        <SidebarListItem
+                          key={list.id}
+                          list={list}
+                          active={list.id === selectedListId}
+                          onSelect={() => setSelectedListId(list.id)}
+                          onView={() => openListDetail(list.id)}
+                          timelineOpen={openTimelineListIds.has(list.id)}
+                          onToggleTimeline={() => toggleListTimeline(list.id)}
+                          selectedDayId={selectedDayByListId[list.id] ?? null}
+                          onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                          onFocusPlace={focusPlaceOnMap}
+                        />
+                      ))
+                    ) : (
+                      <p className="sidebar__empty">Save a list from Explore to pin it here.</p>
+                    )}
                   </div>
                 </div>
-              ) : null}
+
+                {recentlyWatchedLists.length > 0 ? (
+                  <div className="sidebar__section">
+                    <div className="section-heading">
+                      <h3>Recently watched</h3>
+                      <span>{recentlyWatchedLists.length}</span>
+                    </div>
+                    <div className="account-list-sidebar">
+                      {recentlyWatchedLists.map((list) => (
+                        <SidebarListItem
+                          key={list.id}
+                          list={list}
+                          active={list.id === selectedListId}
+                          onSelect={() => setSelectedListId(list.id)}
+                          onView={() => openListDetail(list.id)}
+                          timelineOpen={openTimelineListIds.has(list.id)}
+                          onToggleTimeline={() => toggleListTimeline(list.id)}
+                          selectedDayId={selectedDayByListId[list.id] ?? null}
+                          onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                          onFocusPlace={focusPlaceOnMap}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </aside>
           ) : (
             <div className="map-search-float">

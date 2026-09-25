@@ -2807,12 +2807,29 @@ button.stat-pill {
   z-index: 10;
   width: 320px;
   max-height: calc(100vh - 114px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 28px;
+  /* Clips .map-sidebar__scroll's own content to the rounded corners -- needed now that the
+     handle+scroll area are two separate boxes instead of the one padded/clipped grid this used
+     to be. */
+  overflow: hidden;
+}
+
+/* The scrollable part of the sheet -- everything except the drag handle, which used to just be
+   this same element's first grid item (so scrolling the list scrolled the handle away with it,
+   needing a scroll back to the top before the sheet could be resized again). Splitting it into its
+   own box below a small fixed handle strip keeps the handle reachable at any scroll position,
+   without the handle having to fake it by sticking to the top of content it doesn't visually
+   belong to. */
+.map-sidebar__scroll {
   display: grid;
   gap: 18px;
   align-content: start;
-  border-radius: 28px;
   padding: 18px;
   overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .map-sidebar__header {
@@ -2831,10 +2848,6 @@ button.stat-pill {
      handlers are always attached. */
   display: none;
   justify-content: center;
-  padding: 4px 0 10px;
-  margin: -6px -8px 0;
-  cursor: grab;
-  touch-action: none;
 }
 
 .map-sidebar__drag-handle:active {
@@ -2867,6 +2880,10 @@ button.stat-pill {
 
   .map-sidebar__drag-handle {
     display: flex;
+    flex-shrink: 0;
+    padding: 10px 0 6px;
+    cursor: grab;
+    touch-action: none;
   }
 }
 
