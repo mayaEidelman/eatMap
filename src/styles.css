@@ -1398,13 +1398,6 @@ button.stat-pill {
   color: #9c4f66;
 }
 
-.place-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent-hot), var(--accent-sky));
-}
-
 .star-row {
   display: flex;
   gap: 8px;

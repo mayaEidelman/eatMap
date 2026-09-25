@@ -1,6 +1,7 @@
 import { ChangeEvent, FormEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bed,
+  Bookmark,
   Coffee,
   Compass,
   Croissant,
@@ -478,6 +479,7 @@ function AppShell() {
   const [saveToListNotes, setSaveToListNotes] = useState('');
   const [inspectedPlaceId, setInspectedPlaceId] = useState<string | null>(null);
   const [openTimelineListIds, setOpenTimelineListIds] = useState<Set<string>>(new Set());
+  const [openSavedPlacesListIds, setOpenSavedPlacesListIds] = useState<Set<string>>(new Set());
   const [selectedDayByListId, setSelectedDayByListId] = useState<Record<string, string | null>>({});
   const [placeSelectMode, setPlaceSelectMode] = useState(false);
   const [selectedPlaceIds, setSelectedPlaceIds] = useState<Set<string>>(new Set());
@@ -1321,6 +1323,18 @@ function AppShell() {
     });
   }
 
+  function toggleListSavedPlaces(listId: string) {
+    setOpenSavedPlacesListIds((current) => {
+      const next = new Set(current);
+      if (next.has(listId)) {
+        next.delete(listId);
+      } else {
+        next.add(listId);
+      }
+      return next;
+    });
+  }
+
   function showListOnMap(listId: string) {
     const list = data?.lists.find((item) => item.id === listId);
     const isOwned = list?.ownerId === data?.currentUserId;
@@ -1825,6 +1839,8 @@ function AppShell() {
                           onView={() => openListDetail(list.id)}
                           timelineOpen={openTimelineListIds.has(list.id)}
                           onToggleTimeline={() => toggleListTimeline(list.id)}
+                          savedPlacesOpen={openSavedPlacesListIds.has(list.id)}
+                          onToggleSavedPlaces={() => toggleListSavedPlaces(list.id)}
                           selectedDayId={selectedDayByListId[list.id] ?? null}
                           onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
                           onFocusPlace={focusPlaceOnMap}
@@ -1852,6 +1868,8 @@ function AppShell() {
                           onView={() => openListDetail(list.id)}
                           timelineOpen={openTimelineListIds.has(list.id)}
                           onToggleTimeline={() => toggleListTimeline(list.id)}
+                          savedPlacesOpen={openSavedPlacesListIds.has(list.id)}
+                          onToggleSavedPlaces={() => toggleListSavedPlaces(list.id)}
                           selectedDayId={selectedDayByListId[list.id] ?? null}
                           onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
                           onFocusPlace={focusPlaceOnMap}
@@ -1877,6 +1895,8 @@ function AppShell() {
                           onView={() => openListDetail(list.id)}
                           timelineOpen={openTimelineListIds.has(list.id)}
                           onToggleTimeline={() => toggleListTimeline(list.id)}
+                          savedPlacesOpen={openSavedPlacesListIds.has(list.id)}
+                          onToggleSavedPlaces={() => toggleListSavedPlaces(list.id)}
                           selectedDayId={selectedDayByListId[list.id] ?? null}
                           onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
                           onFocusPlace={focusPlaceOnMap}
@@ -1904,6 +1924,8 @@ function AppShell() {
                           onView={() => openListDetail(list.id)}
                           timelineOpen={openTimelineListIds.has(list.id)}
                           onToggleTimeline={() => toggleListTimeline(list.id)}
+                          savedPlacesOpen={openSavedPlacesListIds.has(list.id)}
+                          onToggleSavedPlaces={() => toggleListSavedPlaces(list.id)}
                           selectedDayId={selectedDayByListId[list.id] ?? null}
                           onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
                           onFocusPlace={focusPlaceOnMap}
@@ -4401,7 +4423,18 @@ function PlacePreviewModal({ place, onClose }: { place: Place; onClose: () => vo
   );
 }
 
-function SavedPlacesView({ places, onSelectPlace }: { places: Place[]; onSelectPlace: (placeId: string) => void }) {
+function SavedPlacesView({
+  places,
+  onSelectPlace,
+  showHeading = true,
+}: {
+  places: Place[];
+  onSelectPlace: (placeId: string) => void;
+  /** Off when embedded somewhere that already labels the section (e.g. the sidebar's per-list
+   * saved-places panel, opened from a button on the list's own row) -- otherwise "Saved places"
+   * just repeats context the surrounding UI already gave. */
+  showHeading?: boolean;
+}) {
   const [collapsedCategories, setCollapsedCategories] = useState<Set<PlaceCategory>>(new Set());
 
   function toggleCategory(category: PlaceCategory) {
@@ -4418,7 +4451,7 @@ function SavedPlacesView({ places, onSelectPlace }: { places: Place[]; onSelectP
 
   return (
     <div className="place-list">
-      <h3>Saved places</h3>
+      {showHeading ? <h3>Saved places</h3> : null}
       {groupPlacesByCategory(places).map((group) => {
         const collapsed = collapsedCategories.has(group.category);
         return (
@@ -4442,7 +4475,6 @@ function SavedPlacesView({ places, onSelectPlace }: { places: Place[]; onSelectP
                     className="place-list__item place-list__item--clickable"
                     onClick={() => onSelectPlace(place.id)}
                   >
-                    <span className="place-dot" />
                     <div>
                       <strong>{place.name}</strong>
                       <small>{place.address}</small>
@@ -4545,6 +4577,8 @@ function SidebarListItem({
   selectedDayId,
   onSelectDay,
   onFocusPlace,
+  savedPlacesOpen,
+  onToggleSavedPlaces,
 }: {
   list: TripList;
   active: boolean;
@@ -4557,6 +4591,8 @@ function SidebarListItem({
   onSelectDay: (dayId: string | null) => void;
   /** Pans/zooms the map to a place and opens its info window. */
   onFocusPlace: (placeId: string) => void;
+  savedPlacesOpen: boolean;
+  onToggleSavedPlaces: () => void;
 }) {
   const selectedDay = selectedDayId ? list.days.find((day) => day.id === selectedDayId) ?? null : null;
   const scheduledPlaceIds = selectedDay
@@ -4574,6 +4610,15 @@ function SidebarListItem({
           <strong>{list.title}</strong>
         </button>
         <button
+          className={`icon-button${savedPlacesOpen ? ' icon-button--active' : ''}`}
+          type="button"
+          onClick={onToggleSavedPlaces}
+          aria-label={savedPlacesOpen ? `Hide ${list.title} saved places` : `Show all ${list.title} saved places`}
+          aria-expanded={savedPlacesOpen}
+        >
+          <Bookmark size={16} aria-hidden="true" />
+        </button>
+        <button
           className={`icon-button${timelineOpen ? ' icon-button--active' : ''}`}
           type="button"
           onClick={onToggleTimeline}
@@ -4586,6 +4631,14 @@ function SidebarListItem({
           ⓘ
         </button>
       </div>
+
+      {savedPlacesOpen ? (
+        list.places.length > 0 ? (
+          <SavedPlacesView places={list.places} onSelectPlace={onFocusPlace} showHeading={false} />
+        ) : (
+          <p className="sidebar__empty">No places saved yet.</p>
+        )
+      ) : null}
 
       {timelineOpen ? (
         <div className="sidebar-timeline">
