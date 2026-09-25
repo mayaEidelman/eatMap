@@ -2337,11 +2337,21 @@ function AppShell() {
           <div className="modal panel" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="section-heading">
               <h3>{listFormMode === 'create' ? 'Create a new trip list' : 'Edit trip list'}</h3>
-              <button className="icon-button" type="button" onClick={() => setComposerOpen(false)}>
-                ×
-              </button>
+              <div className="composer-header-actions">
+                <button
+                  type="submit"
+                  form="composer-form"
+                  className="primary-button composer-header-actions__save"
+                  disabled={listFormSubmitting}
+                >
+                  {listFormSubmitting ? 'Saving…' : listFormMode === 'create' ? 'Publish list' : 'Save changes'}
+                </button>
+                <button className="icon-button" type="button" onClick={() => setComposerOpen(false)}>
+                  ×
+                </button>
+              </div>
             </div>
-            <form className="form-grid" onSubmit={submitListForm}>
+            <form id="composer-form" className="form-grid" onSubmit={submitListForm}>
               <label>
                 <span>Title</span>
                 <input value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} required />

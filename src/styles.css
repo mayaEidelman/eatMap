@@ -1105,6 +1105,23 @@ button.stat-pill {
   margin: 0;
 }
 
+/* A second, compact "Save" alongside the header's own × -- long forms (the trip list editor,
+   with a full day-by-day itinerary below) otherwise mean scrolling all the way back down just to
+   submit. Smaller/lighter than the full-size CTA at the bottom so the header doesn't visually
+   compete with it -- this is a shortcut, not the primary action. */
+.composer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.composer-header-actions__save {
+  min-height: 38px;
+  padding: 0 14px;
+  font-size: 0.85rem;
+  box-shadow: none;
+}
+
 .owner-card {
   position: relative;
   display: flex;
