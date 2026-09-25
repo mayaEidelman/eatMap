@@ -812,31 +812,11 @@ function AppShell() {
     [accountLists, collaboratingLists, savedLists, recentlyWatchedLists],
   );
 
-  // When a list's sidebar timeline is open with no specific day picked ("all days"), the map
-  // shows everything scheduled into a day, not every saved place (some may never have been
-  // dragged into the plan). Picking a specific day no longer hides the rest of the list's
-  // places -- they stay visible but faded (see mapDimmedPlaceIds below) so the day's own
-  // places can be picked out without losing the rest of the trip for context.
-  const mapDisplayLists = useMemo(() => {
-    return myMapLists.map((list) => {
-      if (!openTimelineListIds.has(list.id)) {
-        return list;
-      }
-
-      const selectedDayId = selectedDayByListId[list.id];
-      const day = selectedDayId ? list.days.find((tripDay) => tripDay.id === selectedDayId) : undefined;
-      if (day) {
-        return list;
-      }
-
-      const visiblePlaceIds = getScheduledPlaceIds(list);
-      return { ...list, places: list.places.filter((place) => visiblePlaceIds.has(place.id)) };
-    });
-  }, [myMapLists, openTimelineListIds, selectedDayByListId]);
-
-  // Places belonging to a list whose timeline is open on a specific day, but not scheduled into
-  // that day -- rendered faded/brighter on the map instead of hidden, so the selected day's
-  // places stand out while the rest of the trip stays visible for context.
+  // Places belonging to a list whose timeline is open, that don't match the currently selected
+  // filter -- rendered faded/brighter on the map instead of hidden, so the filter's own places
+  // stand out while the rest of the trip stays visible for context. "All days" behaves the same
+  // way a specific day does: its "filter" is just "scheduled into some day," so a saved-but-never-
+  // scheduled place gets dimmed there too instead of being hidden outright.
   const mapDimmedPlaceIds = useMemo(() => {
     const dimmed = new Set<string>();
     myMapLists.forEach((list) => {
@@ -846,13 +826,10 @@ function AppShell() {
 
       const selectedDayId = selectedDayByListId[list.id];
       const day = selectedDayId ? list.days.find((tripDay) => tripDay.id === selectedDayId) : undefined;
-      if (!day) {
-        return;
-      }
+      const matchingPlaceIds = day ? new Set(day.placeIds) : getScheduledPlaceIds(list);
 
-      const dayPlaceIds = new Set(day.placeIds);
       list.places.forEach((place) => {
-        if (!dayPlaceIds.has(place.id)) {
+        if (!matchingPlaceIds.has(place.id)) {
           dimmed.add(place.id);
         }
       });
@@ -1775,7 +1752,7 @@ function AppShell() {
       {page === 'home' ? (
         <div className="map-page page-transition">
           <MapPanel
-            lists={mapDisplayLists}
+            lists={myMapLists}
             selectedListId={selectedList?.id ?? myMapLists[0]?.id ?? ''}
             onSelectList={setSelectedListId}
             previewPlace={mapSearchPlace}
