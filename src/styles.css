@@ -1105,6 +1105,23 @@ button.stat-pill {
   margin: 0;
 }
 
+/* A second, compact "Save" alongside the header's own × -- long forms (the trip list editor,
+   with a full day-by-day itinerary below) otherwise mean scrolling all the way back down just to
+   submit. Smaller/lighter than the full-size CTA at the bottom so the header doesn't visually
+   compete with it -- this is a shortcut, not the primary action. */
+.composer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.composer-header-actions__save {
+  min-height: 38px;
+  padding: 0 14px;
+  font-size: 0.85rem;
+  box-shadow: none;
+}
+
 .owner-card {
   position: relative;
   display: flex;
@@ -1381,13 +1398,6 @@ button.stat-pill {
   color: #9c4f66;
 }
 
-.place-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent-hot), var(--accent-sky));
-}
-
 .star-row {
   display: flex;
   gap: 8px;
@@ -1431,6 +1441,13 @@ button.stat-pill {
 
 .save-to-list-modal {
   width: min(420px, 100%);
+}
+
+/* Every field in this form is form-grid__full (a single column: Trip, Group name, Invite) -- the
+   default .modal width (860px, sized for two-column forms like the trip editor) left most of the
+   modal empty and stranded the Cancel/Create buttons out at the far right of that empty space. */
+.new-expense-group-modal {
+  width: min(440px, 100%);
 }
 
 .save-to-list-modal__place {
@@ -1487,6 +1504,16 @@ button.stat-pill {
 
 .form-grid__full {
   grid-column: 1 / -1;
+}
+
+/* .form-grid__full is also targeted by the shared .section-heading/.modal-actions rule below
+   (display: flex; justify-content: space-between), which only gets overridden back to a vertical
+   stack for <label> elements (see .form-grid label above) -- this field is a plain <div>, so
+   without this it spread its "Invite" span and the search box to opposite ends of the row instead
+   of stacking them. The doubled-up class name beats that shared rule's specificity outright. */
+.form-grid__full.expense-invite-field {
+  display: grid;
+  gap: 8px;
 }
 
 .visibility-toggle {
@@ -2210,23 +2237,6 @@ button.stat-pill {
   color: #e11d48;
 }
 
-.expense-invite-picker {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  max-height: 180px;
-  overflow: auto;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-}
-
-.expense-invite-picker__item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .expense-detail-modal {
   display: grid;
   gap: 16px;
@@ -2408,6 +2418,42 @@ button.stat-pill {
 
 .expense-invite-more {
   position: relative;
+}
+
+.expense-invite-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.expense-invite-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 5px 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  font-size: 0.86rem;
+}
+
+.expense-invite-chip .dm-thread__avatar {
+  width: 22px;
+  height: 22px;
+}
+
+.expense-invite-chip button {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(74, 74, 74, 0.08);
+  color: var(--ink);
+  cursor: pointer;
+  line-height: 1;
 }
 
 .expense-invite-search {
@@ -2775,11 +2821,6 @@ button.stat-pill {
   white-space: nowrap;
 }
 
-@media (max-width: 720px) {
-  .expense-invite-picker {
-    grid-template-columns: 1fr;
-  }
-}
 
 .map-page {
   /* Fills the full viewport (independent of .app-shell's centered max-width) at all times --
@@ -2807,12 +2848,29 @@ button.stat-pill {
   z-index: 10;
   width: 320px;
   max-height: calc(100vh - 114px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 28px;
+  /* Clips .map-sidebar__scroll's own content to the rounded corners -- needed now that the
+     handle+scroll area are two separate boxes instead of the one padded/clipped grid this used
+     to be. */
+  overflow: hidden;
+}
+
+/* The scrollable part of the sheet -- everything except the drag handle, which used to just be
+   this same element's first grid item (so scrolling the list scrolled the handle away with it,
+   needing a scroll back to the top before the sheet could be resized again). Splitting it into its
+   own box below a small fixed handle strip keeps the handle reachable at any scroll position,
+   without the handle having to fake it by sticking to the top of content it doesn't visually
+   belong to. */
+.map-sidebar__scroll {
   display: grid;
   gap: 18px;
   align-content: start;
-  border-radius: 28px;
   padding: 18px;
   overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .map-sidebar__header {
@@ -2831,10 +2889,6 @@ button.stat-pill {
      handlers are always attached. */
   display: none;
   justify-content: center;
-  padding: 4px 0 10px;
-  margin: -6px -8px 0;
-  cursor: grab;
-  touch-action: none;
 }
 
 .map-sidebar__drag-handle:active {
@@ -2867,6 +2921,10 @@ button.stat-pill {
 
   .map-sidebar__drag-handle {
     display: flex;
+    flex-shrink: 0;
+    padding: 10px 0 6px;
+    cursor: grab;
+    touch-action: none;
   }
 }
 

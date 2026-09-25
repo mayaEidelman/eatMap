@@ -1,6 +1,7 @@
 import { ChangeEvent, FormEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bed,
+  Bookmark,
   Coffee,
   Compass,
   Croissant,
@@ -145,22 +146,38 @@ function buildDestinationColors(days: TripDay[]): Map<string, string> {
   return colors;
 }
 
-/** Places with a startTime sort chronologically; places without one keep their manual drag order,
- * appended after every timed place (stable within each group). */
+/** The user's manual drag order is the primary ordering -- an untimed place stays exactly where
+ * it was dragged to, never getting bumped to the end (or start) just because a few other places
+ * happen to have times set. Only the places that *do* have a startTime get reordered, and only
+ * among themselves: they're pulled out, sorted chronologically, then dropped back into the same
+ * slots (by position) they originally occupied, so a manual sequence like
+ * [untimed, 14:00, untimed, 09:00] becomes [untimed, 09:00, untimed, 14:00] -- the two timed
+ * places swap to be in time order, the untimed ones never move. */
 function sortPlaceIdsByTime(placeIds: string[], placeTimes: Record<string, PlaceTimeRange> | undefined): string[] {
   if (!placeTimes) {
     return placeIds;
   }
 
-  return placeIds
-    .map((placeId, index) => ({ placeId, index, startTime: placeTimes[placeId]?.startTime }))
-    .sort((a, b) => {
-      if (a.startTime && b.startTime) return a.startTime.localeCompare(b.startTime);
-      if (a.startTime) return -1;
-      if (b.startTime) return 1;
-      return a.index - b.index;
-    })
-    .map((entry) => entry.placeId);
+  const timedSlots: number[] = [];
+  placeIds.forEach((placeId, index) => {
+    if (placeTimes[placeId]?.startTime) {
+      timedSlots.push(index);
+    }
+  });
+
+  if (timedSlots.length === 0) {
+    return placeIds;
+  }
+
+  const sortedTimedIds = timedSlots
+    .map((index) => placeIds[index])
+    .sort((a, b) => placeTimes[a]!.startTime!.localeCompare(placeTimes[b]!.startTime!));
+
+  const result = [...placeIds];
+  timedSlots.forEach((slot, i) => {
+    result[slot] = sortedTimedIds[i];
+  });
+  return result;
 }
 
 function formatClockTime(value: string | undefined): string {
@@ -462,6 +479,7 @@ function AppShell() {
   const [saveToListNotes, setSaveToListNotes] = useState('');
   const [inspectedPlaceId, setInspectedPlaceId] = useState<string | null>(null);
   const [openTimelineListIds, setOpenTimelineListIds] = useState<Set<string>>(new Set());
+  const [openSavedPlacesListIds, setOpenSavedPlacesListIds] = useState<Set<string>>(new Set());
   const [selectedDayByListId, setSelectedDayByListId] = useState<Record<string, string | null>>({});
   const [placeSelectMode, setPlaceSelectMode] = useState(false);
   const [selectedPlaceIds, setSelectedPlaceIds] = useState<Set<string>>(new Set());
@@ -492,6 +510,7 @@ function AppShell() {
   const [newExpenseGroupListId, setNewExpenseGroupListId] = useState('');
   const [newExpenseGroupName, setNewExpenseGroupName] = useState('');
   const [newExpenseGroupInviteIds, setNewExpenseGroupInviteIds] = useState<string[]>([]);
+  const [newExpenseGroupInviteSearchQuery, setNewExpenseGroupInviteSearchQuery] = useState('');
   const [newExpenseGroupError, setNewExpenseGroupError] = useState<string | null>(null);
   const [newExpenseGroupSubmitting, setNewExpenseGroupSubmitting] = useState(false);
   const [inviteSearchQuery, setInviteSearchQuery] = useState('');
@@ -794,31 +813,11 @@ function AppShell() {
     [accountLists, collaboratingLists, savedLists, recentlyWatchedLists],
   );
 
-  // When a list's sidebar timeline is open with no specific day picked ("all days"), the map
-  // shows everything scheduled into a day, not every saved place (some may never have been
-  // dragged into the plan). Picking a specific day no longer hides the rest of the list's
-  // places -- they stay visible but faded (see mapDimmedPlaceIds below) so the day's own
-  // places can be picked out without losing the rest of the trip for context.
-  const mapDisplayLists = useMemo(() => {
-    return myMapLists.map((list) => {
-      if (!openTimelineListIds.has(list.id)) {
-        return list;
-      }
-
-      const selectedDayId = selectedDayByListId[list.id];
-      const day = selectedDayId ? list.days.find((tripDay) => tripDay.id === selectedDayId) : undefined;
-      if (day) {
-        return list;
-      }
-
-      const visiblePlaceIds = getScheduledPlaceIds(list);
-      return { ...list, places: list.places.filter((place) => visiblePlaceIds.has(place.id)) };
-    });
-  }, [myMapLists, openTimelineListIds, selectedDayByListId]);
-
-  // Places belonging to a list whose timeline is open on a specific day, but not scheduled into
-  // that day -- rendered faded/brighter on the map instead of hidden, so the selected day's
-  // places stand out while the rest of the trip stays visible for context.
+  // Places belonging to a list whose timeline is open, that don't match the currently selected
+  // filter -- rendered faded/brighter on the map instead of hidden, so the filter's own places
+  // stand out while the rest of the trip stays visible for context. "All days" behaves the same
+  // way a specific day does: its "filter" is just "scheduled into some day," so a saved-but-never-
+  // scheduled place gets dimmed there too instead of being hidden outright.
   const mapDimmedPlaceIds = useMemo(() => {
     const dimmed = new Set<string>();
     myMapLists.forEach((list) => {
@@ -828,13 +827,10 @@ function AppShell() {
 
       const selectedDayId = selectedDayByListId[list.id];
       const day = selectedDayId ? list.days.find((tripDay) => tripDay.id === selectedDayId) : undefined;
-      if (!day) {
-        return;
-      }
+      const matchingPlaceIds = day ? new Set(day.placeIds) : getScheduledPlaceIds(list);
 
-      const dayPlaceIds = new Set(day.placeIds);
       list.places.forEach((place) => {
-        if (!dayPlaceIds.has(place.id)) {
+        if (!matchingPlaceIds.has(place.id)) {
           dimmed.add(place.id);
         }
       });
@@ -934,6 +930,19 @@ function AppShell() {
   const inviteSearchResults = normalizedInviteSearch
     ? inviteCandidates.filter(
         (user) => user.name.toLowerCase().includes(normalizedInviteSearch) || user.handle.toLowerCase().includes(normalizedInviteSearch),
+      )
+    : [];
+
+  const newExpenseGroupInvitedUsers = newExpenseGroupInviteIds
+    .map((userId) => peopleToFollow.find((user) => user.id === userId))
+    .filter((user): user is AppData['users'][number] => Boolean(user));
+  const newExpenseGroupInviteCandidates = peopleToFollow.filter((user) => !newExpenseGroupInviteIds.includes(user.id));
+  const normalizedNewExpenseGroupInviteSearch = newExpenseGroupInviteSearchQuery.trim().toLowerCase();
+  const newExpenseGroupInviteSearchResults = normalizedNewExpenseGroupInviteSearch
+    ? newExpenseGroupInviteCandidates.filter(
+        (user) =>
+          user.name.toLowerCase().includes(normalizedNewExpenseGroupInviteSearch) ||
+          user.handle.toLowerCase().includes(normalizedNewExpenseGroupInviteSearch),
       )
     : [];
 
@@ -1293,6 +1302,18 @@ function AppShell() {
     setListInviteSearchQuery('');
   }
 
+  // Only one of a list's two sidebar panels (timeline / saved places) can be open at once -- they
+  // render in the same spot, so having both open just stacked their results on top of each other.
+  // Opening one closes the other for that same list; other lists' panels are untouched.
+  function dismissFromSet(setter: typeof setOpenTimelineListIds, listId: string) {
+    setter((current) => {
+      if (!current.has(listId)) return current;
+      const next = new Set(current);
+      next.delete(listId);
+      return next;
+    });
+  }
+
   function toggleListTimeline(listId: string) {
     setOpenTimelineListIds((current) => {
       const next = new Set(current);
@@ -1303,6 +1324,20 @@ function AppShell() {
       }
       return next;
     });
+    dismissFromSet(setOpenSavedPlacesListIds, listId);
+  }
+
+  function toggleListSavedPlaces(listId: string) {
+    setOpenSavedPlacesListIds((current) => {
+      const next = new Set(current);
+      if (next.has(listId)) {
+        next.delete(listId);
+      } else {
+        next.add(listId);
+      }
+      return next;
+    });
+    dismissFromSet(setOpenTimelineListIds, listId);
   }
 
   function showListOnMap(listId: string) {
@@ -1463,6 +1498,7 @@ function AppShell() {
     setNewExpenseGroupListId(accountLists[0]?.id ?? '');
     setNewExpenseGroupName('');
     setNewExpenseGroupInviteIds([]);
+    setNewExpenseGroupInviteSearchQuery('');
     setNewExpenseGroupError(null);
     setNewExpenseGroupOpen(true);
   }
@@ -1471,6 +1507,14 @@ function AppShell() {
     setNewExpenseGroupInviteIds((current) =>
       current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId],
     );
+  }
+
+  /** Adding via a search result (as opposed to removing a chip, which reuses the toggle above)
+   * also clears the search box -- same "pick one, box resets, search for the next" flow the list
+   * collaborator and expense-group "invite more" search boxes already use. */
+  function addNewExpenseGroupInvite(userId: string) {
+    setNewExpenseGroupInviteIds((current) => (current.includes(userId) ? current : [...current, userId]));
+    setNewExpenseGroupInviteSearchQuery('');
   }
 
   async function submitNewExpenseGroup(event: FormEvent<HTMLFormElement>) {
@@ -1745,7 +1789,7 @@ function AppShell() {
       {page === 'home' ? (
         <div className="map-page page-transition">
           <MapPanel
-            lists={mapDisplayLists}
+            lists={myMapLists}
             selectedListId={selectedList?.id ?? myMapLists[0]?.id ?? ''}
             onSelectList={setSelectedListId}
             previewPlace={mapSearchPlace}
@@ -1775,126 +1819,136 @@ function AppShell() {
                 <span className="map-sidebar__drag-handle-bar" aria-hidden="true" />
               </div>
 
-              <div className="map-sidebar__header">
-                <h3>Lists</h3>
-                <button className="icon-button" type="button" onClick={() => setSidebarOpen(false)} aria-label="Hide sidebar">
-                  ‹
-                </button>
-              </div>
-
-              <div className="sidebar__section map-quick-add">
-                <div className="section-heading">
-                  <h3>Add a place</h3>
+              <div className="map-sidebar__scroll">
+                <div className="map-sidebar__header">
+                  <h3>Lists</h3>
+                  <button className="icon-button" type="button" onClick={() => setSidebarOpen(false)} aria-label="Hide sidebar">
+                    ‹
+                  </button>
                 </div>
-                <PlaceAutocomplete onAdd={handleMapPlaceFound} />
-                <small className="draft-places__empty">
-                  {mapSearchPlace ? 'See details and Save on the pin below.' : 'Search to drop a pin on the map.'}
-                </small>
-              </div>
 
-              <div className="sidebar__section">
-                <div className="section-heading">
-                  <h3>My lists</h3>
-                  <span>{accountLists.length}</span>
+                <div className="sidebar__section map-quick-add">
+                  <div className="section-heading">
+                    <h3>Add a place</h3>
+                  </div>
+                  <PlaceAutocomplete onAdd={handleMapPlaceFound} />
+                  <small className="draft-places__empty">
+                    {mapSearchPlace ? 'See details and Save on the pin below.' : 'Search to drop a pin on the map.'}
+                  </small>
                 </div>
-                <div className="account-list-sidebar">
-                  {accountLists.length ? (
-                    accountLists.map((list) => (
-                      <SidebarListItem
-                        key={list.id}
-                        list={list}
-                        active={list.id === selectedListId}
-                        onSelect={() => setSelectedListId(list.id)}
-                        onView={() => openListDetail(list.id)}
-                        timelineOpen={openTimelineListIds.has(list.id)}
-                        onToggleTimeline={() => toggleListTimeline(list.id)}
-                        selectedDayId={selectedDayByListId[list.id] ?? null}
-                        onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
-                        onFocusPlace={focusPlaceOnMap}
-                      />
-                    ))
-                  ) : (
-                    <p className="sidebar__empty">You haven't created a list yet.</p>
-                  )}
-                </div>
-              </div>
 
-              {collaboratingLists.length > 0 ? (
                 <div className="sidebar__section">
                   <div className="section-heading">
-                    <h3>Collaborating</h3>
-                    <span>{collaboratingLists.length}</span>
+                    <h3>My lists</h3>
+                    <span>{accountLists.length}</span>
                   </div>
                   <div className="account-list-sidebar">
-                    {collaboratingLists.map((list) => (
-                      <SidebarListItem
-                        key={list.id}
-                        list={list}
-                        active={list.id === selectedListId}
-                        onSelect={() => setSelectedListId(list.id)}
-                        onView={() => openListDetail(list.id)}
-                        timelineOpen={openTimelineListIds.has(list.id)}
-                        onToggleTimeline={() => toggleListTimeline(list.id)}
-                        selectedDayId={selectedDayByListId[list.id] ?? null}
-                        onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
-                        onFocusPlace={focusPlaceOnMap}
-                      />
-                    ))}
+                    {accountLists.length ? (
+                      accountLists.map((list) => (
+                        <SidebarListItem
+                          key={list.id}
+                          list={list}
+                          active={list.id === selectedListId}
+                          onSelect={() => setSelectedListId(list.id)}
+                          onView={() => openListDetail(list.id)}
+                          timelineOpen={openTimelineListIds.has(list.id)}
+                          onToggleTimeline={() => toggleListTimeline(list.id)}
+                          savedPlacesOpen={openSavedPlacesListIds.has(list.id)}
+                          onToggleSavedPlaces={() => toggleListSavedPlaces(list.id)}
+                          selectedDayId={selectedDayByListId[list.id] ?? null}
+                          onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                          onFocusPlace={focusPlaceOnMap}
+                        />
+                      ))
+                    ) : (
+                      <p className="sidebar__empty">You haven't created a list yet.</p>
+                    )}
                   </div>
                 </div>
-              ) : null}
 
-              <div className="sidebar__section">
-                <div className="section-heading">
-                  <h3>Saved lists</h3>
-                  <span>{savedLists.length}</span>
-                </div>
-                <div className="account-list-sidebar">
-                  {savedLists.length ? (
-                    savedLists.map((list) => (
-                      <SidebarListItem
-                        key={list.id}
-                        list={list}
-                        active={list.id === selectedListId}
-                        onSelect={() => setSelectedListId(list.id)}
-                        onView={() => openListDetail(list.id)}
-                        timelineOpen={openTimelineListIds.has(list.id)}
-                        onToggleTimeline={() => toggleListTimeline(list.id)}
-                        selectedDayId={selectedDayByListId[list.id] ?? null}
-                        onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
-                        onFocusPlace={focusPlaceOnMap}
-                      />
-                    ))
-                  ) : (
-                    <p className="sidebar__empty">Save a list from Explore to pin it here.</p>
-                  )}
-                </div>
-              </div>
+                {collaboratingLists.length > 0 ? (
+                  <div className="sidebar__section">
+                    <div className="section-heading">
+                      <h3>Collaborating</h3>
+                      <span>{collaboratingLists.length}</span>
+                    </div>
+                    <div className="account-list-sidebar">
+                      {collaboratingLists.map((list) => (
+                        <SidebarListItem
+                          key={list.id}
+                          list={list}
+                          active={list.id === selectedListId}
+                          onSelect={() => setSelectedListId(list.id)}
+                          onView={() => openListDetail(list.id)}
+                          timelineOpen={openTimelineListIds.has(list.id)}
+                          onToggleTimeline={() => toggleListTimeline(list.id)}
+                          savedPlacesOpen={openSavedPlacesListIds.has(list.id)}
+                          onToggleSavedPlaces={() => toggleListSavedPlaces(list.id)}
+                          selectedDayId={selectedDayByListId[list.id] ?? null}
+                          onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                          onFocusPlace={focusPlaceOnMap}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
 
-              {recentlyWatchedLists.length > 0 ? (
                 <div className="sidebar__section">
                   <div className="section-heading">
-                    <h3>Recently watched</h3>
-                    <span>{recentlyWatchedLists.length}</span>
+                    <h3>Saved lists</h3>
+                    <span>{savedLists.length}</span>
                   </div>
                   <div className="account-list-sidebar">
-                    {recentlyWatchedLists.map((list) => (
-                      <SidebarListItem
-                        key={list.id}
-                        list={list}
-                        active={list.id === selectedListId}
-                        onSelect={() => setSelectedListId(list.id)}
-                        onView={() => openListDetail(list.id)}
-                        timelineOpen={openTimelineListIds.has(list.id)}
-                        onToggleTimeline={() => toggleListTimeline(list.id)}
-                        selectedDayId={selectedDayByListId[list.id] ?? null}
-                        onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
-                        onFocusPlace={focusPlaceOnMap}
-                      />
-                    ))}
+                    {savedLists.length ? (
+                      savedLists.map((list) => (
+                        <SidebarListItem
+                          key={list.id}
+                          list={list}
+                          active={list.id === selectedListId}
+                          onSelect={() => setSelectedListId(list.id)}
+                          onView={() => openListDetail(list.id)}
+                          timelineOpen={openTimelineListIds.has(list.id)}
+                          onToggleTimeline={() => toggleListTimeline(list.id)}
+                          savedPlacesOpen={openSavedPlacesListIds.has(list.id)}
+                          onToggleSavedPlaces={() => toggleListSavedPlaces(list.id)}
+                          selectedDayId={selectedDayByListId[list.id] ?? null}
+                          onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                          onFocusPlace={focusPlaceOnMap}
+                        />
+                      ))
+                    ) : (
+                      <p className="sidebar__empty">Save a list from Explore to pin it here.</p>
+                    )}
                   </div>
                 </div>
-              ) : null}
+
+                {recentlyWatchedLists.length > 0 ? (
+                  <div className="sidebar__section">
+                    <div className="section-heading">
+                      <h3>Recently watched</h3>
+                      <span>{recentlyWatchedLists.length}</span>
+                    </div>
+                    <div className="account-list-sidebar">
+                      {recentlyWatchedLists.map((list) => (
+                        <SidebarListItem
+                          key={list.id}
+                          list={list}
+                          active={list.id === selectedListId}
+                          onSelect={() => setSelectedListId(list.id)}
+                          onView={() => openListDetail(list.id)}
+                          timelineOpen={openTimelineListIds.has(list.id)}
+                          onToggleTimeline={() => toggleListTimeline(list.id)}
+                          savedPlacesOpen={openSavedPlacesListIds.has(list.id)}
+                          onToggleSavedPlaces={() => toggleListSavedPlaces(list.id)}
+                          selectedDayId={selectedDayByListId[list.id] ?? null}
+                          onSelectDay={(dayId) => setSelectedDayByListId((current) => ({ ...current, [list.id]: dayId }))}
+                          onFocusPlace={focusPlaceOnMap}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </aside>
           ) : (
             <div className="map-search-float">
@@ -2319,11 +2373,21 @@ function AppShell() {
           <div className="modal panel" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="section-heading">
               <h3>{listFormMode === 'create' ? 'Create a new trip list' : 'Edit trip list'}</h3>
-              <button className="icon-button" type="button" onClick={() => setComposerOpen(false)}>
-                ×
-              </button>
+              <div className="composer-header-actions">
+                <button
+                  type="submit"
+                  form="composer-form"
+                  className="primary-button composer-header-actions__save"
+                  disabled={listFormSubmitting}
+                >
+                  {listFormSubmitting ? 'Saving…' : listFormMode === 'create' ? 'Publish list' : 'Save changes'}
+                </button>
+                <button className="icon-button" type="button" onClick={() => setComposerOpen(false)}>
+                  ×
+                </button>
+              </div>
             </div>
-            <form className="form-grid" onSubmit={submitListForm}>
+            <form id="composer-form" className="form-grid" onSubmit={submitListForm}>
               <label>
                 <span>Title</span>
                 <input value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} required />
@@ -3232,7 +3296,7 @@ function AppShell() {
 
       {newExpenseGroupOpen ? (
         <div className="modal-backdrop" role="presentation" onClick={() => setNewExpenseGroupOpen(false)}>
-          <div className="modal panel" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+          <div className="modal panel new-expense-group-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="section-heading">
               <h3>New expense group</h3>
             </div>
@@ -3261,21 +3325,56 @@ function AppShell() {
                 />
               </label>
 
-              <div className="form-grid__full">
+              <div className="form-grid__full expense-invite-field">
                 <span>Invite</span>
-                <div className="expense-invite-picker">
-                  {peopleToFollow.map((user) => (
-                    <label key={user.id} className="expense-invite-picker__item">
-                      <input
-                        type="checkbox"
-                        checked={newExpenseGroupInviteIds.includes(user.id)}
-                        onChange={() => toggleNewExpenseGroupInvite(user.id)}
-                      />
-                      {user.name}
-                    </label>
-                  ))}
-                  {peopleToFollow.length === 0 ? <p className="sidebar__empty">No other travelers to invite yet.</p> : null}
-                </div>
+                {newExpenseGroupInvitedUsers.length > 0 ? (
+                  <div className="expense-invite-chips">
+                    {newExpenseGroupInvitedUsers.map((user) => (
+                      <span key={user.id} className="expense-invite-chip">
+                        <Avatar user={user} className="dm-thread__avatar" />
+                        {user.name}
+                        <button type="button" onClick={() => toggleNewExpenseGroupInvite(user.id)} aria-label={`Remove ${user.name}`}>
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {peopleToFollow.length > 0 ? (
+                  <div className="expense-invite-more">
+                    <input
+                      type="text"
+                      className="expense-invite-search"
+                      value={newExpenseGroupInviteSearchQuery}
+                      onChange={(event) => setNewExpenseGroupInviteSearchQuery(event.target.value)}
+                      placeholder="Search people to invite…"
+                    />
+                    {normalizedNewExpenseGroupInviteSearch ? (
+                      <div className="expense-invite-results">
+                        {newExpenseGroupInviteSearchResults.length === 0 ? (
+                          <p className="sidebar__empty">No matching travelers.</p>
+                        ) : (
+                          newExpenseGroupInviteSearchResults.map((user) => (
+                            <button
+                              key={user.id}
+                              type="button"
+                              className="expense-invite-results__item"
+                              onClick={() => addNewExpenseGroupInvite(user.id)}
+                            >
+                              <Avatar user={user} className="dm-thread__avatar" />
+                              <span>
+                                <strong>{user.name}</strong>
+                                <small>{user.handle}</small>
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="sidebar__empty">No other travelers to invite yet.</p>
+                )}
               </div>
 
               {newExpenseGroupError ? <p className="form-grid__full place-autocomplete__error">{newExpenseGroupError}</p> : null}
@@ -4373,7 +4472,18 @@ function PlacePreviewModal({ place, onClose }: { place: Place; onClose: () => vo
   );
 }
 
-function SavedPlacesView({ places, onSelectPlace }: { places: Place[]; onSelectPlace: (placeId: string) => void }) {
+function SavedPlacesView({
+  places,
+  onSelectPlace,
+  showHeading = true,
+}: {
+  places: Place[];
+  onSelectPlace: (placeId: string) => void;
+  /** Off when embedded somewhere that already labels the section (e.g. the sidebar's per-list
+   * saved-places panel, opened from a button on the list's own row) -- otherwise "Saved places"
+   * just repeats context the surrounding UI already gave. */
+  showHeading?: boolean;
+}) {
   const [collapsedCategories, setCollapsedCategories] = useState<Set<PlaceCategory>>(new Set());
 
   function toggleCategory(category: PlaceCategory) {
@@ -4390,7 +4500,7 @@ function SavedPlacesView({ places, onSelectPlace }: { places: Place[]; onSelectP
 
   return (
     <div className="place-list">
-      <h3>Saved places</h3>
+      {showHeading ? <h3>Saved places</h3> : null}
       {groupPlacesByCategory(places).map((group) => {
         const collapsed = collapsedCategories.has(group.category);
         return (
@@ -4414,7 +4524,6 @@ function SavedPlacesView({ places, onSelectPlace }: { places: Place[]; onSelectP
                     className="place-list__item place-list__item--clickable"
                     onClick={() => onSelectPlace(place.id)}
                   >
-                    <span className="place-dot" />
                     <div>
                       <strong>{place.name}</strong>
                       <small>{place.address}</small>
@@ -4517,6 +4626,8 @@ function SidebarListItem({
   selectedDayId,
   onSelectDay,
   onFocusPlace,
+  savedPlacesOpen,
+  onToggleSavedPlaces,
 }: {
   list: TripList;
   active: boolean;
@@ -4529,6 +4640,8 @@ function SidebarListItem({
   onSelectDay: (dayId: string | null) => void;
   /** Pans/zooms the map to a place and opens its info window. */
   onFocusPlace: (placeId: string) => void;
+  savedPlacesOpen: boolean;
+  onToggleSavedPlaces: () => void;
 }) {
   const selectedDay = selectedDayId ? list.days.find((day) => day.id === selectedDayId) ?? null : null;
   const scheduledPlaceIds = selectedDay
@@ -4546,6 +4659,15 @@ function SidebarListItem({
           <strong>{list.title}</strong>
         </button>
         <button
+          className={`icon-button${savedPlacesOpen ? ' icon-button--active' : ''}`}
+          type="button"
+          onClick={onToggleSavedPlaces}
+          aria-label={savedPlacesOpen ? `Hide ${list.title} saved places` : `Show all ${list.title} saved places`}
+          aria-expanded={savedPlacesOpen}
+        >
+          <Bookmark size={16} aria-hidden="true" />
+        </button>
+        <button
           className={`icon-button${timelineOpen ? ' icon-button--active' : ''}`}
           type="button"
           onClick={onToggleTimeline}
@@ -4558,6 +4680,14 @@ function SidebarListItem({
           ⓘ
         </button>
       </div>
+
+      {savedPlacesOpen ? (
+        list.places.length > 0 ? (
+          <SavedPlacesView places={list.places} onSelectPlace={onFocusPlace} showHeading={false} />
+        ) : (
+          <p className="sidebar__empty">No places saved yet.</p>
+        )
+      ) : null}
 
       {timelineOpen ? (
         <div className="sidebar-timeline">
