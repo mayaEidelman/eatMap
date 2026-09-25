@@ -267,6 +267,12 @@ export function MapPanel({
           disableDefaultUI: true,
           zoomControl: true,
           clickableIcons: true,
+          // Google defaults touch devices to 'cooperative' (two fingers to pan, one finger scrolls
+          // the page instead) so an embedded map doesn't hijack page scroll -- but this map *is*
+          // the whole page, not embedded in a longer one, so there's nothing for a one-finger drag
+          // to conflict with. 'greedy' makes a single finger pan/zoom directly, no "use two fingers"
+          // nag overlay.
+          gestureHandling: 'greedy',
           styles: MAP_STYLE,
         });
 
