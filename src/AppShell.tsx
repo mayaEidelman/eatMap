@@ -510,6 +510,7 @@ function AppShell() {
   const [newExpenseGroupListId, setNewExpenseGroupListId] = useState('');
   const [newExpenseGroupName, setNewExpenseGroupName] = useState('');
   const [newExpenseGroupInviteIds, setNewExpenseGroupInviteIds] = useState<string[]>([]);
+  const [newExpenseGroupInviteSearchQuery, setNewExpenseGroupInviteSearchQuery] = useState('');
   const [newExpenseGroupError, setNewExpenseGroupError] = useState<string | null>(null);
   const [newExpenseGroupSubmitting, setNewExpenseGroupSubmitting] = useState(false);
   const [inviteSearchQuery, setInviteSearchQuery] = useState('');
@@ -932,6 +933,19 @@ function AppShell() {
       )
     : [];
 
+  const newExpenseGroupInvitedUsers = newExpenseGroupInviteIds
+    .map((userId) => peopleToFollow.find((user) => user.id === userId))
+    .filter((user): user is AppData['users'][number] => Boolean(user));
+  const newExpenseGroupInviteCandidates = peopleToFollow.filter((user) => !newExpenseGroupInviteIds.includes(user.id));
+  const normalizedNewExpenseGroupInviteSearch = newExpenseGroupInviteSearchQuery.trim().toLowerCase();
+  const newExpenseGroupInviteSearchResults = normalizedNewExpenseGroupInviteSearch
+    ? newExpenseGroupInviteCandidates.filter(
+        (user) =>
+          user.name.toLowerCase().includes(normalizedNewExpenseGroupInviteSearch) ||
+          user.handle.toLowerCase().includes(normalizedNewExpenseGroupInviteSearch),
+      )
+    : [];
+
   const {
     expenses: groupExpenses,
     settlements: groupSettlements,
@@ -1288,6 +1302,18 @@ function AppShell() {
     setListInviteSearchQuery('');
   }
 
+  // Only one of a list's two sidebar panels (timeline / saved places) can be open at once -- they
+  // render in the same spot, so having both open just stacked their results on top of each other.
+  // Opening one closes the other for that same list; other lists' panels are untouched.
+  function dismissFromSet(setter: typeof setOpenTimelineListIds, listId: string) {
+    setter((current) => {
+      if (!current.has(listId)) return current;
+      const next = new Set(current);
+      next.delete(listId);
+      return next;
+    });
+  }
+
   function toggleListTimeline(listId: string) {
     setOpenTimelineListIds((current) => {
       const next = new Set(current);
@@ -1298,6 +1324,7 @@ function AppShell() {
       }
       return next;
     });
+    dismissFromSet(setOpenSavedPlacesListIds, listId);
   }
 
   function toggleListSavedPlaces(listId: string) {
@@ -1310,6 +1337,7 @@ function AppShell() {
       }
       return next;
     });
+    dismissFromSet(setOpenTimelineListIds, listId);
   }
 
   function showListOnMap(listId: string) {
@@ -1470,6 +1498,7 @@ function AppShell() {
     setNewExpenseGroupListId(accountLists[0]?.id ?? '');
     setNewExpenseGroupName('');
     setNewExpenseGroupInviteIds([]);
+    setNewExpenseGroupInviteSearchQuery('');
     setNewExpenseGroupError(null);
     setNewExpenseGroupOpen(true);
   }
@@ -1478,6 +1507,14 @@ function AppShell() {
     setNewExpenseGroupInviteIds((current) =>
       current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId],
     );
+  }
+
+  /** Adding via a search result (as opposed to removing a chip, which reuses the toggle above)
+   * also clears the search box -- same "pick one, box resets, search for the next" flow the list
+   * collaborator and expense-group "invite more" search boxes already use. */
+  function addNewExpenseGroupInvite(userId: string) {
+    setNewExpenseGroupInviteIds((current) => (current.includes(userId) ? current : [...current, userId]));
+    setNewExpenseGroupInviteSearchQuery('');
   }
 
   async function submitNewExpenseGroup(event: FormEvent<HTMLFormElement>) {
@@ -3259,7 +3296,7 @@ function AppShell() {
 
       {newExpenseGroupOpen ? (
         <div className="modal-backdrop" role="presentation" onClick={() => setNewExpenseGroupOpen(false)}>
-          <div className="modal panel" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+          <div className="modal panel new-expense-group-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="section-heading">
               <h3>New expense group</h3>
             </div>
@@ -3288,21 +3325,56 @@ function AppShell() {
                 />
               </label>
 
-              <div className="form-grid__full">
+              <div className="form-grid__full expense-invite-field">
                 <span>Invite</span>
-                <div className="expense-invite-picker">
-                  {peopleToFollow.map((user) => (
-                    <label key={user.id} className="expense-invite-picker__item">
-                      <input
-                        type="checkbox"
-                        checked={newExpenseGroupInviteIds.includes(user.id)}
-                        onChange={() => toggleNewExpenseGroupInvite(user.id)}
-                      />
-                      {user.name}
-                    </label>
-                  ))}
-                  {peopleToFollow.length === 0 ? <p className="sidebar__empty">No other travelers to invite yet.</p> : null}
-                </div>
+                {newExpenseGroupInvitedUsers.length > 0 ? (
+                  <div className="expense-invite-chips">
+                    {newExpenseGroupInvitedUsers.map((user) => (
+                      <span key={user.id} className="expense-invite-chip">
+                        <Avatar user={user} className="dm-thread__avatar" />
+                        {user.name}
+                        <button type="button" onClick={() => toggleNewExpenseGroupInvite(user.id)} aria-label={`Remove ${user.name}`}>
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {peopleToFollow.length > 0 ? (
+                  <div className="expense-invite-more">
+                    <input
+                      type="text"
+                      className="expense-invite-search"
+                      value={newExpenseGroupInviteSearchQuery}
+                      onChange={(event) => setNewExpenseGroupInviteSearchQuery(event.target.value)}
+                      placeholder="Search people to invite…"
+                    />
+                    {normalizedNewExpenseGroupInviteSearch ? (
+                      <div className="expense-invite-results">
+                        {newExpenseGroupInviteSearchResults.length === 0 ? (
+                          <p className="sidebar__empty">No matching travelers.</p>
+                        ) : (
+                          newExpenseGroupInviteSearchResults.map((user) => (
+                            <button
+                              key={user.id}
+                              type="button"
+                              className="expense-invite-results__item"
+                              onClick={() => addNewExpenseGroupInvite(user.id)}
+                            >
+                              <Avatar user={user} className="dm-thread__avatar" />
+                              <span>
+                                <strong>{user.name}</strong>
+                                <small>{user.handle}</small>
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="sidebar__empty">No other travelers to invite yet.</p>
+                )}
               </div>
 
               {newExpenseGroupError ? <p className="form-grid__full place-autocomplete__error">{newExpenseGroupError}</p> : null}

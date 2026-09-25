@@ -1443,6 +1443,13 @@ button.stat-pill {
   width: min(420px, 100%);
 }
 
+/* Every field in this form is form-grid__full (a single column: Trip, Group name, Invite) -- the
+   default .modal width (860px, sized for two-column forms like the trip editor) left most of the
+   modal empty and stranded the Cancel/Create buttons out at the far right of that empty space. */
+.new-expense-group-modal {
+  width: min(440px, 100%);
+}
+
 .save-to-list-modal__place {
   margin: -4px 0 0;
   font-weight: 700;
@@ -1497,6 +1504,16 @@ button.stat-pill {
 
 .form-grid__full {
   grid-column: 1 / -1;
+}
+
+/* .form-grid__full is also targeted by the shared .section-heading/.modal-actions rule below
+   (display: flex; justify-content: space-between), which only gets overridden back to a vertical
+   stack for <label> elements (see .form-grid label above) -- this field is a plain <div>, so
+   without this it spread its "Invite" span and the search box to opposite ends of the row instead
+   of stacking them. The doubled-up class name beats that shared rule's specificity outright. */
+.form-grid__full.expense-invite-field {
+  display: grid;
+  gap: 8px;
 }
 
 .visibility-toggle {
@@ -2220,23 +2237,6 @@ button.stat-pill {
   color: #e11d48;
 }
 
-.expense-invite-picker {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  max-height: 180px;
-  overflow: auto;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-}
-
-.expense-invite-picker__item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .expense-detail-modal {
   display: grid;
   gap: 16px;
@@ -2418,6 +2418,42 @@ button.stat-pill {
 
 .expense-invite-more {
   position: relative;
+}
+
+.expense-invite-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.expense-invite-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 5px 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  font-size: 0.86rem;
+}
+
+.expense-invite-chip .dm-thread__avatar {
+  width: 22px;
+  height: 22px;
+}
+
+.expense-invite-chip button {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(74, 74, 74, 0.08);
+  color: var(--ink);
+  cursor: pointer;
+  line-height: 1;
 }
 
 .expense-invite-search {
@@ -2785,11 +2821,6 @@ button.stat-pill {
   white-space: nowrap;
 }
 
-@media (max-width: 720px) {
-  .expense-invite-picker {
-    grid-template-columns: 1fr;
-  }
-}
 
 .map-page {
   /* Fills the full viewport (independent of .app-shell's centered max-width) at all times --
