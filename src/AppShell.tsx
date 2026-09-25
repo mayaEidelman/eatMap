@@ -145,22 +145,38 @@ function buildDestinationColors(days: TripDay[]): Map<string, string> {
   return colors;
 }
 
-/** Places with a startTime sort chronologically; places without one keep their manual drag order,
- * appended after every timed place (stable within each group). */
+/** The user's manual drag order is the primary ordering -- an untimed place stays exactly where
+ * it was dragged to, never getting bumped to the end (or start) just because a few other places
+ * happen to have times set. Only the places that *do* have a startTime get reordered, and only
+ * among themselves: they're pulled out, sorted chronologically, then dropped back into the same
+ * slots (by position) they originally occupied, so a manual sequence like
+ * [untimed, 14:00, untimed, 09:00] becomes [untimed, 09:00, untimed, 14:00] -- the two timed
+ * places swap to be in time order, the untimed ones never move. */
 function sortPlaceIdsByTime(placeIds: string[], placeTimes: Record<string, PlaceTimeRange> | undefined): string[] {
   if (!placeTimes) {
     return placeIds;
   }
 
-  return placeIds
-    .map((placeId, index) => ({ placeId, index, startTime: placeTimes[placeId]?.startTime }))
-    .sort((a, b) => {
-      if (a.startTime && b.startTime) return a.startTime.localeCompare(b.startTime);
-      if (a.startTime) return -1;
-      if (b.startTime) return 1;
-      return a.index - b.index;
-    })
-    .map((entry) => entry.placeId);
+  const timedSlots: number[] = [];
+  placeIds.forEach((placeId, index) => {
+    if (placeTimes[placeId]?.startTime) {
+      timedSlots.push(index);
+    }
+  });
+
+  if (timedSlots.length === 0) {
+    return placeIds;
+  }
+
+  const sortedTimedIds = timedSlots
+    .map((index) => placeIds[index])
+    .sort((a, b) => placeTimes[a]!.startTime!.localeCompare(placeTimes[b]!.startTime!));
+
+  const result = [...placeIds];
+  timedSlots.forEach((slot, i) => {
+    result[slot] = sortedTimedIds[i];
+  });
+  return result;
 }
 
 function formatClockTime(value: string | undefined): string {
