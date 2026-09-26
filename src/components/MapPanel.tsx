@@ -71,6 +71,19 @@ function computeMinZoom(containerWidth: number, containerHeight: number): number
   return Math.max(2, Math.ceil(zoomForFullWorld));
 }
 
+/** Google's own saved-place pins shrink at low zoom (country/world view, lots of pins crowded
+ * together) and grow back to full size once zoomed into a city/neighborhood -- our markers stayed
+ * a constant size regardless, which made a zoomed-out trip look far more cluttered/heavy than the
+ * same map in the actual Google Maps app. Returns a 0-1 multiplier to scale a marker's base size
+ * by, given the map's current zoom level. */
+function zoomScaleFactor(zoom: number): number {
+  const minZoom = 4; // country/continent view -- markers at their smallest
+  const maxZoom = 12; // city/neighborhood view and closer -- full size
+  const minFactor = 0.5;
+  const t = Math.min(1, Math.max(0, (zoom - minZoom) / (maxZoom - minZoom)));
+  return minFactor + (1 - minFactor) * t;
+}
+
 function colorForList(listId: string, lists: TripList[]) {
   const list = lists.find((item) => item.id === listId);
   if (list?.color) {
@@ -215,6 +228,12 @@ export function MapPanel({
   const mapInstance = useRef<google.maps.Map | null>(null);
   const markers = useRef<google.maps.Marker[]>([]);
   const markersByPlaceId = useRef<Map<string, google.maps.Marker>>(new Map());
+  /** Each marker's un-scaled icon/label/outline size, so the zoom listener below can re-derive
+   * "base size × current zoom factor" on every zoom change without needing to rebuild the markers
+   * themselves. */
+  const markerBaseSize = useRef<Map<google.maps.Marker, { scale: number; fontSize: number; strokeWeight: number }>>(
+    new Map(),
+  );
   const previewMarker = useRef<google.maps.Marker | null>(null);
   const userLocationMarker = useRef<google.maps.Marker | null>(null);
   const userLocationAccuracy = useRef<google.maps.Circle | null>(null);
@@ -355,6 +374,9 @@ export function MapPanel({
     markers.current.forEach((marker) => marker.setMap(null));
     markers.current = [];
     markersByPlaceId.current = new Map();
+    markerBaseSize.current = new Map();
+
+    const zoomFactor = zoomScaleFactor(map.getZoom() ?? defaultZoom);
 
     lists.forEach((list) => {
       const active = list.id === selectedListId;
@@ -365,6 +387,9 @@ export function MapPanel({
         const isSelectable = Boolean(selectMode) && active;
         const isSelected = isSelectable && Boolean(selectedPlaceIds?.has(placeItem.id));
         const isDimmed = Boolean(dimmedPlaceIds?.has(placeItem.id));
+        const baseScale = isSelected ? 16 : active ? 15 : 12;
+        const baseFontSize = active ? 15 : 12;
+        const baseStrokeWeight = isSelected ? 3 : isDimmed ? 1 : 2;
         const marker = new window.google.maps.Marker({
           position,
           map,
@@ -374,19 +399,21 @@ export function MapPanel({
           // Selected markers (grouping mode) get a green fill + checkmark instead, so which pins
           // are already picked is obvious without opening anything. Places not scheduled into the
           // day currently being viewed are faded (lower fill opacity, thinner outline) rather than
-          // hidden, so the day's own places stand out without losing the rest of the trip.
+          // hidden, so the day's own places stand out without losing the rest of the trip. Scaled
+          // down further at low zoom (see zoomScaleFactor) so a zoomed-out trip doesn't look like a
+          // wall of oversized pins the way a constant size would.
           icon: {
             path: window.google.maps.SymbolPath.CIRCLE,
-            scale: isSelected ? 16 : active ? 15 : 12,
+            scale: baseScale * zoomFactor,
             fillColor: isSelected ? '#2f8f5b' : color,
             fillOpacity: isDimmed ? 0.35 : 1,
             strokeColor: '#ffffff',
             strokeOpacity: isDimmed ? 0.6 : 1,
-            strokeWeight: isSelected ? 3 : isDimmed ? 1 : 2,
+            strokeWeight: Math.max(1, baseStrokeWeight * zoomFactor),
           },
           label: {
             text: isSelected ? '✓' : CATEGORY_META[placeItem.category].icon,
-            fontSize: active ? '15px' : '12px',
+            fontSize: `${Math.max(9, baseFontSize * zoomFactor)}px`,
           },
           zIndex: isSelected ? 1000 : active ? 999 : isDimmed ? 0 : 1,
         });
@@ -462,9 +489,42 @@ export function MapPanel({
 
         markers.current.push(marker);
         markersByPlaceId.current.set(placeItem.id, marker);
+        markerBaseSize.current.set(marker, { scale: baseScale, fontSize: baseFontSize, strokeWeight: baseStrokeWeight });
       });
     });
   }, [lists, selectedListId, onSelectList, ready, selectMode, selectedPlaceIds, onTogglePlaceSelect, dimmedPlaceIds]);
+
+  // Re-scales every current marker's icon/label in place on each zoom change, rather than
+  // rebuilding the markers themselves (which would also tear down and reattach every click
+  // listener on every zoom tick). Attached once markers can exist, not per-rebuild -- it always
+  // reads markers.current/markerBaseSize.current fresh, so it stays correct across rebuilds
+  // without needing to be re-attached itself.
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!ready || !map || !window.google) {
+      return;
+    }
+
+    const listener = map.addListener('zoom_changed', () => {
+      const factor = zoomScaleFactor(map.getZoom() ?? defaultZoom);
+      markers.current.forEach((marker) => {
+        const base = markerBaseSize.current.get(marker);
+        if (!base) return;
+
+        const icon = marker.getIcon();
+        if (!icon || typeof icon !== 'object' || !('path' in icon)) return;
+
+        marker.setIcon({ ...icon, scale: base.scale * factor, strokeWeight: Math.max(1, base.strokeWeight * factor) });
+
+        const label = marker.getLabel();
+        if (label && typeof label === 'object') {
+          marker.setLabel({ ...label, fontSize: `${Math.max(9, base.fontSize * factor)}px` });
+        }
+      });
+    });
+
+    return () => listener.remove();
+  }, [ready]);
 
   // Sidebar timeline entries are clickable -- this re-runs the same "open this marker" behavior
   // the marker's own click listener above uses, so a sidebar click and a direct map tap on the
